@@ -1,21 +1,12 @@
-// Top-level build file
-plugins {
-    id 'com.android.application' version '8.2.0' apply false
-}
-
-allprojects {
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+buildscript {
     repositories {
         google()
         mavenCentral()
     }
-}
-
-ext {
-    compileSdkVersion = 34
-    targetSdkVersion = 34
-    minSdkVersion = 26
-    buildToolsVersion = "34.0.0"
-    ndkVersion = "25.2.9519653"
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.2.0'
+    }
 }
 
 task clean(type: Delete) {
