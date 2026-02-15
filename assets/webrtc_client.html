@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Winland Server - الوصول عن بُعد</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #fff;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        
+        /* شريط العنوان */
+        .header {
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #e94560, #ff6b6b);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        
+        .logo-text {
+            font-size: 1.5rem;
+            font-weight: bold;
+            background: linear-gradient(135deg, #fff, #a0a0a0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .status-bar {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: #a0a0a0;
+        }
+        
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #28a745;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .connection-status {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .connection-status.connecting {
+            background: #ffc107;
+            color: #000;
+        }
+        
+        .connection-status.connected {
+            background: #28a745;
+            color: #fff;
+        }
+        
+        .connection-status.disconnected {
+            background: #dc3545;
+            color: #fff;
+        }
+        
+        /* المنطقة الرئيسية */
+        .main-content {
+            flex: 1;
+            display: flex;
+            position: relative;
+        }
+        
+        /* الشريط الجانبي */
+        .sidebar {
+            width: 250px;
+            background: rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .sidebar.collapsed {
+            transform: translateX(100%);
+        }
+        
+        .section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+            margin-bottom: 10px;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .btn {
+            padding: 12px 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #e94560, #ff6b6b);
+            color: #fff;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(233, 69, 96, 0.4);
+        }
+        
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        /* إعدادات الجودة */
+        .quality-settings {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .setting-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .setting-label {
+            font-size: 0.85rem;
+            color: #ccc;
+        }
+        
+        .setting-value {
+            font-size: 0.8rem;
+            color: #888;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #e94560;
+            cursor: pointer;
+        }
+        
+        select {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(0, 0, 0, 0.3);
+            color: #fff;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        
+        /* إحصائيات */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        
+        .stat-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #e94560;
+        }
+        
+        .stat-label {
+            font-size: 0.7rem;
+            color: #888;
+            margin-top: 5px;
+        }
+        
+        /* منطقة الفيديو */
+        .video-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #remoteVideo {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        
+        .video-placeholder {
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .video-placeholder-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        
+        .video-placeholder-text {
+            font-size: 1.2rem;
+            color: #888;
+        }
+        
+        /* شريط الأدوات العائم */
+        .floating-toolbar {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
+            padding: 10px;
+            border-radius: 50px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .toolbar-btn {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .toolbar-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+        
+        .toolbar-btn.active {
+            background: #e94560;
+        }
+        
+        .toolbar-btn.danger {
+            background: #dc3545;
+        }
+        
+        /* لوحة تسجيل الدخول */
+        .login-panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .login-box {
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            padding: 40px;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .login-logo {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+        
+        .login-title {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .login-subtitle {
+            color: #888;
+            margin-bottom: 30px;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+            text-align: right;
+        }
+        
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            color: #ccc;
+        }
+        
+        .input-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            color: #fff;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+        
+        .remember-me {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            color: #ccc;
+        }
+        
+        .remember-me input {
+            width: 18px;
+            height: 18px;
+            accent-color: #e94560;
+        }
+        
+        /* لوحة اللمس */
+        .touch-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            cursor: none;
+        }
+        
+        .touch-cursor {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #e94560;
+            border-radius: 50%;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            transition: opacity 0.2s ease;
+        }
+        
+        /* لوحة المفاتيح الافتراضية */
+        .virtual-keyboard {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(30, 30, 40, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 10px;
+            display: none;
+            flex-direction: column;
+            gap: 5px;
+            z-index: 100;
+        }
+        
+        .virtual-keyboard.visible {
+            display: flex;
+        }
+        
+        .keyboard-row {
+            display: flex;
+            justify-content: center;
+            gap: 5px;
+        }
+        
+        .key {
+            min-width: 30px;
+            height: 40px;
+            padding: 0 10px;
+            border: none;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.1s ease;
+        }
+        
+        .key:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .key:active {
+            background: #e94560;
+            transform: scale(0.95);
+        }
+        
+        .key.wide {
+            min-width: 60px;
+        }
+        
+        .key.extra-wide {
+            min-width: 100px;
+        }
+        
+        /* الإشعارات */
+        .notifications {
+            position: fixed;
+            top: 80px;
+            left: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 500;
+        }
+        
+        .notification {
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 15px 20px;
+            border-radius: 10px;
+            border-right: 4px solid #e94560;
+            max-width: 300px;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .notification-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .notification-message {
+            font-size: 0.85rem;
+            color: #ccc;
+        }
+        
+        /* تحميل */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 20px;
+            z-index: 1000;
+        }
+        
+        .loading-overlay.visible {
+            display: flex;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #e94560;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* التجاوب */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                right: 0;
+                top: 70px;
+                bottom: 0;
+                z-index: 100;
+            }
+            
+            .header {
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+            
+            .status-bar {
+                width: 100%;
+                justify-content: space-around;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- شريط العنوان -->
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">🐧</div>
+                <span class="logo-text">Winland Server</span>
+            </div>
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="status-indicator"></span>
+                    <span>متصل</span>
+                </div>
+                <div class="status-item">
+                    <span>📶</span>
+                    <span id="signalStrength">ممتاز</span>
+                </div>
+                <div class="status-item">
+                    <span>⏱️</span>
+                    <span id="latency">12ms</span>
+                </div>
+                <div class="connection-status disconnected" id="connectionStatus">غير متصل</div>
+            </div>
+        </header>
+        
+        <!-- المحتوى الرئيسي -->
+        <div class="main-content">
+            <!-- الشريط الجانبي -->
+            <aside class="sidebar" id="sidebar">
+                <!-- التحكم بالاتصال -->
+                <div class="control-group">
+                    <div class="section-title">التحكم</div>
+                    <button class="btn btn-primary" id="connectBtn" onclick="connect()">
+                        <span>🔗</span> الاتصال
+                    </button>
+                    <button class="btn btn-secondary" id="disconnectBtn" onclick="disconnect()" disabled>
+                        <span>❌</span> قطع الاتصال
+                    </button>
+                </div>
+                
+                <!-- إعدادات الجودة -->
+                <div class="quality-settings">
+                    <div class="section-title">الجودة</div>
+                    <div class="setting-item">
+                        <label class="setting-label">دقة الفيديو</label>
+                        <select id="resolutionSelect" onchange="updateResolution()">
+                            <option value="1920x1080">Full HD (1080p)</option>
+                            <option value="1280x720" selected>HD (720p)</option>
+                            <option value="854x480">SD (480p)</option>
+                            <option value="640x360">Low (360p)</option>
+                        </select>
+                    </div>
+                    <div class="setting-item">
+                        <label class="setting-label">معدل الإطارات: <span id="fpsValue">30</span> FPS</label>
+                        <input type="range" id="fpsSlider" min="15" max="60" value="30" 
+                               oninput="updateFPS(this.value)">
+                    </div>
+                    <div class="setting-item">
+                        <label class="setting-label">جودة الصورة: <span id="qualityValue">80</span>%</label>
+                        <input type="range" id="qualitySlider" min="30" max="100" value="80" 
+                               oninput="updateQuality(this.value)">
+                    </div>
+                </div>
+                
+                <!-- الإحصائيات -->
+                <div>
+                    <div class="section-title">الإحصائيات</div>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="bitrate">2.5</div>
+                            <div class="stat-label">معدل البت (Mbps)</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="packetLoss">0.1</div>
+                            <div class="stat-label">فقدان الحزم (%)</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="fps">30</div>
+                            <div class="stat-label">إطار/ثانية</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="cpu">15</div>
+                            <div class="stat-label">استخدام المعالج (%)</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- خيارات إضافية -->
+                <div>
+                    <div class="section-title">خيارات</div>
+                    <div class="control-group">
+                        <button class="btn btn-secondary" onclick="toggleFullscreen()">
+                            <span>🖥️</span> ملء الشاشة
+                        </button>
+                        <button class="btn btn-secondary" onclick="toggleKeyboard()">
+                            <span>⌨️</span> لوحة المفاتيح
+                        </button>
+                        <button class="btn btn-secondary" onclick="takeScreenshot()">
+                            <span>📷</span> لقطة شاشة
+                        </button>
+                    </div>
+                </div>
+            </aside>
+            
+            <!-- منطقة الفيديو -->
+            <div class="video-container" id="videoContainer">
+                <video id="remoteVideo" autoplay playsinline></video>
+                <div class="video-placeholder" id="videoPlaceholder">
+                    <div class="video-placeholder-icon">🖥️</div>
+                    <div class="video-placeholder-text">اضغط على "الاتصال" للبدء</div>
+                </div>
+                <div class="touch-overlay" id="touchOverlay"></div>
+                <div class="touch-cursor" id="touchCursor"></div>
+                
+                <!-- شريط الأدوات العائم -->
+                <div class="floating-toolbar">
+                    <button class="toolbar-btn" id="mouseBtn" onclick="setMode('mouse')" title="الفأرة">
+                        🖱️
+                    </button>
+                    <button class="toolbar-btn active" id="touchBtn" onclick="setMode('touch')" title="اللمس">
+                        👆
+                    </button>
+                    <button class="toolbar-btn" onclick="sendKey('win')" title="مفتاح Windows">
+                        🪟
+                    </button>
+                    <button class="toolbar-btn" onclick="sendKey('alt_tab')" title="Alt+Tab">
+                        🔄
+                    </button>
+                    <button class="toolbar-btn" onclick="sendKey('esc')" title="Escape">
+                        ⎋
+                    </button>
+                    <button class="toolbar-btn" onclick="sendKey('ctrl_alt_t')" title="Terminal">
+                        🖥️
+                    </button>
+                    <button class="toolbar-btn danger" onclick="disconnect()" title="قطع الاتصال">
+                        🔴
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- لوحة المفاتيح الافتراضية -->
+        <div class="virtual-keyboard" id="virtualKeyboard">
+            <div class="keyboard-row">
+                <button class="key" onclick="sendChar('1')">1</button>
+                <button class="key" onclick="sendChar('2')">2</button>
+                <button class="key" onclick="sendChar('3')">3</button>
+                <button class="key" onclick="sendChar('4')">4</button>
+                <button class="key" onclick="sendChar('5')">5</button>
+                <button class="key" onclick="sendChar('6')">6</button>
+                <button class="key" onclick="sendChar('7')">7</button>
+                <button class="key" onclick="sendChar('8')">8</button>
+                <button class="key" onclick="sendChar('9')">9</button>
+                <button class="key" onclick="sendChar('0')">0</button>
+                <button class="key wide" onclick="backspace()">⌫</button>
+            </div>
+            <div class="keyboard-row">
+                <button class="key" onclick="sendChar('ض')">ض</button>
+                <button class="key" onclick="sendChar('ص')">ص</button>
+                <button class="key" onclick="sendChar('ث')">ث</button>
+                <button class="key" onclick="sendChar('ق')">ق</button>
+                <button class="key" onclick="sendChar('ف')">ف</button>
+                <button class="key" onclick="sendChar('غ')">غ</button>
+                <button class="key" onclick="sendChar('ع')">ع</button>
+                <button class="key" onclick="sendChar('ه')">ه</button>
+                <button class="key" onclick="sendChar('خ')">خ</button>
+                <button class="key" onclick="sendChar('ح')">ح</button>
+                <button class="key" onclick="sendChar('ج')">ج</button>
+                <button class="key" onclick="sendChar('د')">د</button>
+            </div>
+            <div class="keyboard-row">
+                <button class="key" onclick="sendChar('ش')">ش</button>
+                <button class="key" onclick="sendChar('س')">س</button>
+                <button class="key" onclick="sendChar('ي')">ي</button>
+                <button class="key" onclick="sendChar('ب')">ب</button>
+                <button class="key" onclick="sendChar('ل')">ل</button>
+                <button class="key" onclick="sendChar('ا')">ا</button>
+                <button class="key" onclick="sendChar('ت')">ت</button>
+                <button class="key" onclick="sendChar('ن')">ن</button>
+                <button class="key" onclick="sendChar('م')">م</button>
+                <button class="key" onclick="sendChar('ك')">ك</button>
+                <button class="key" onclick="sendChar('ط')">ط</button>
+            </div>
+            <div class="keyboard-row">
+                <button class="key wide" onclick="sendKey('shift')">⇧</button>
+                <button class="key" onclick="sendChar('ئ')">ئ</button>
+                <button class="key" onclick="sendChar('ء')">ء</button>
+                <button class="key" onclick="sendChar('ؤ')">ؤ</button>
+                <button class="key" onclick="sendChar('ر')">ر</button>
+                <button class="key" onclick="sendChar('ى')">ى</button>
+                <button class="key" onclick="sendChar('ة')">ة</button>
+                <button class="key" onclick="sendChar('و')">و</button>
+                <button class="key" onclick="sendChar('ز')">ز</button>
+                <button class="key" onclick="sendChar('ظ')">ظ</button>
+                <button class="key wide" onclick="sendKey('enter')">⏎</button>
+            </div>
+            <div class="keyboard-row">
+                <button class="key" onclick="sendKey('ctrl')">Ctrl</button>
+                <button class="key" onclick="sendKey('alt')">Alt</button>
+                <button class="key extra-wide" onclick="sendChar(' ')">مسافة</button>
+                <button class="key" onclick="sendKey('alt')">Alt</button>
+                <button class="key" onclick="sendKey('ctrl')">Ctrl</button>
+                <button class="key wide" onclick="toggleKeyboard()">إخفاء</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- لوحة تسجيل الدخول -->
+    <div class="login-panel" id="loginPanel">
+        <div class="login-box">
+            <div class="login-logo">🐧</div>
+            <h2 class="login-title">Winland Server</h2>
+            <p class="login-subtitle">أدخل بيانات الاتصال بالخادم</p>
+            
+            <div class="input-group">
+                <label for="serverAddress">عنوان الخادم</label>
+                <input type="text" id="serverAddress" placeholder="192.168.1.100:8080" 
+                       value="localhost:8080">
+            </div>
+            
+            <div class="input-group">
+                <label for="password">كلمة المرور (اختياري)</label>
+                <input type="password" id="password" placeholder="••••••••">
+            </div>
+            
+            <label class="remember-me">
+                <input type="checkbox" id="rememberMe">
+                <span>تذكرني</span>
+            </label>
+            
+            <button class="btn btn-primary" style="width: 100%;" onclick="login()">
+                الاتصال
+            </button>
+        </div>
+    </div>
+    
+    <!-- الإشعارات -->
+    <div class="notifications" id="notifications"></div>
+    
+    <!-- تحميل -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <p>جاري الاتصال...</p>
+    </div>
+
+    <script>
+        // ==================== متغيرات WebRTC ====================
+        let pc = null;
+        let ws = null;
+        let localStream = null;
+        let remoteStream = null;
+        let isConnected = false;
+        let currentMode = 'touch';
+        
+        const config = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+        
+        // ==================== دوال الاتصال ====================
+        function login() {
+            const server = document.getElementById('serverAddress').value;
+            const password = document.getElementById('password').value;
+            const remember = document.getElementById('rememberMe').checked;
+            
+            if (remember) {
+                localStorage.setItem('winland_server', server);
+                localStorage.setItem('winland_password', password);
+            }
+            
+            document.getElementById('loginPanel').style.display = 'none';
+            showNotification('مرحباً!', 'تم تسجيل الدخول بنجاح');
+        }
+        
+        async function connect() {
+            if (isConnected) return;
+            
+            showLoading(true);
+            updateConnectionStatus('connecting');
+            
+            try {
+                // الاتصال بخادم الإشارات
+                const server = document.getElementById('serverAddress').value || 'localhost:8080';
+                ws = new WebSocket(`wss://${server}/signal`);
+                
+                ws.onopen = async () => {
+                    console.log('WebSocket connected');
+                    
+                    // إنشاء اتصال WebRTC
+                    pc = new RTCPeerConnection(config);
+                    
+                    // إضافة المسارات
+                    pc.ontrack = (event) => {
+                        const video = document.getElementById('remoteVideo');
+                        if (video.srcObject !== event.streams[0]) {
+                            video.srcObject = event.streams[0];
+                            document.getElementById('videoPlaceholder').style.display = 'none';
+                        }
+                    };
+                    
+                    pc.onicecandidate = (event) => {
+                        if (event.candidate) {
+                            ws.send(JSON.stringify({
+                                type: 'ice',
+                                candidate: event.candidate
+                            }));
+                        }
+                    };
+                    
+                    pc.onconnectionstatechange = () => {
+                        console.log('Connection state:', pc.connectionState);
+                        if (pc.connectionState === 'connected') {
+                            onConnected();
+                        } else if (pc.connectionState === 'disconnected' || 
+                                   pc.connectionState === 'failed') {
+                            onDisconnected();
+                        }
+                    };
+                    
+                    // إنشاء عرض
+                    const offer = await pc.createOffer({
+                        offerToReceiveVideo: true,
+                        offerToReceiveAudio: true
+                    });
+                    await pc.setLocalDescription(offer);
+                    
+                    ws.send(JSON.stringify({
+                        type: 'offer',
+                        sdp: offer.sdp
+                    }));
+                };
+                
+                ws.onmessage = async (event) => {
+                    const msg = JSON.parse(event.data);
+                    
+                    switch (msg.type) {
+                        case 'answer':
+                            await pc.setRemoteDescription(new RTCSessionDescription({
+                                type: 'answer',
+                                sdp: msg.sdp
+                            }));
+                            break;
+                            
+                        case 'ice':
+                            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                            break;
+                            
+                        case 'error':
+                            showNotification('خطأ', msg.message);
+                            onDisconnected();
+                            break;
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    showNotification('خطأ', 'فشل الاتصال بالخادم');
+                    onDisconnected();
+                };
+                
+                ws.onclose = () => {
+                    console.log('WebSocket closed');
+                    onDisconnected();
+                };
+                
+            } catch (error) {
+                console.error('Connection error:', error);
+                showNotification('خطأ', 'فشل في إنشاء الاتصال');
+                onDisconnected();
+            }
+        }
+        
+        function disconnect() {
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            onDisconnected();
+        }
+        
+        function onConnected() {
+            isConnected = true;
+            showLoading(false);
+            updateConnectionStatus('connected');
+            document.getElementById('connectBtn').disabled = true;
+            document.getElementById('disconnectBtn').disabled = false;
+            showNotification('متصل', 'تم الاتصال بنجاح بالخادم');
+            
+            // بدء تحديث الإحصائيات
+            startStatsUpdate();
+        }
+        
+        function onDisconnected() {
+            isConnected = false;
+            showLoading(false);
+            updateConnectionStatus('disconnected');
+            document.getElementById('connectBtn').disabled = false;
+            document.getElementById('disconnectBtn').disabled = true;
+            document.getElementById('videoPlaceholder').style.display = 'block';
+            document.getElementById('remoteVideo').srcObject = null;
+        }
+        
+        function updateConnectionStatus(status) {
+            const el = document.getElementById('connectionStatus');
+            el.className = 'connection-status ' + status;
+            
+            switch (status) {
+                case 'connecting':
+                    el.textContent = 'جاري الاتصال...';
+                    break;
+                case 'connected':
+                    el.textContent = 'متصل';
+                    break;
+                case 'disconnected':
+                    el.textContent = 'غير متصل';
+                    break;
+            }
+        }
+        
+        // ==================== إعدادات الجودة ====================
+        function updateResolution() {
+            const resolution = document.getElementById('resolutionSelect').value;
+            if (ws && isConnected) {
+                ws.send(JSON.stringify({
+                    type: 'config',
+                    resolution: resolution
+                }));
+            }
+        }
+        
+        function updateFPS(value) {
+            document.getElementById('fpsValue').textContent = value;
+            if (ws && isConnected) {
+                ws.send(JSON.stringify({
+                    type: 'config',
+                    fps: parseInt(value)
+                }));
+            }
+        }
+        
+        function updateQuality(value) {
+            document.getElementById('qualityValue').textContent = value;
+            if (ws && isConnected) {
+                ws.send(JSON.stringify({
+                    type: 'config',
+                    quality: parseInt(value)
+                }));
+            }
+        }
+        
+        // ==================== الإحصائيات ====================
+        function startStatsUpdate() {
+            if (!pc) return;
+            
+            setInterval(async () => {
+                const stats = await pc.getStats();
+                stats.forEach(report => {
+                    if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                        document.getElementById('fps').textContent = 
+                            Math.round(report.framesPerSecond || 0);
+                        document.getElementById('bitrate').textContent = 
+                            ((report.bytesReceived * 8) / 1000000).toFixed(1);
+                    }
+                });
+            }, 1000);
+        }
+        
+        // ==================== التحكم باللمس والفأرة ====================
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('mouseBtn').classList.toggle('active', mode === 'mouse');
+            document.getElementById('touchBtn').classList.toggle('active', mode === 'touch');
+            
+            const overlay = document.getElementById('touchOverlay');
+            overlay.style.cursor = mode === 'mouse' ? 'none' : 'default';
+        }
+        
+        // معالجة أحداث اللمس
+        const touchOverlay = document.getElementById('touchOverlay');
+        const touchCursor = document.getElementById('touchCursor');
+        
+        touchOverlay.addEventListener('touchstart', handleTouch);
+        touchOverlay.addEventListener('touchmove', handleTouch);
+        touchOverlay.addEventListener('touchend', handleTouchEnd);
+        touchOverlay.addEventListener('mousedown', handleMouse);
+        touchOverlay.addEventListener('mousemove', handleMouse);
+        touchOverlay.addEventListener('mouseup', handleMouseUp);
+        
+        function handleTouch(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = touchOverlay.getBoundingClientRect();
+            const x = touch.clientX - rect.left;
+            const y = touch.clientY - rect.top;
+            
+            updateCursor(x, y);
+            sendInput('touch', { x, y, type: e.type });
+        }
+        
+        function handleTouchEnd(e) {
+            sendInput('touch', { type: 'touchend' });
+        }
+        
+        function handleMouse(e) {
+            const rect = touchOverlay.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            updateCursor(x, y);
+            
+            const type = e.type === 'mousedown' ? 'mousedown' : 
+                        e.type === 'mouseup' ? 'mouseup' : 'mousemove';
+            sendInput('mouse', { x, y, type, button: e.button });
+        }
+        
+        function handleMouseUp(e) {
+            sendInput('mouse', { type: 'mouseup', button: e.button });
+        }
+        
+        function updateCursor(x, y) {
+            touchCursor.style.left = x + 'px';
+            touchCursor.style.top = y + 'px';
+            touchCursor.style.opacity = '1';
+            
+            clearTimeout(window.cursorTimeout);
+            window.cursorTimeout = setTimeout(() => {
+                touchCursor.style.opacity = '0';
+            }, 2000);
+        }
+        
+        function sendInput(type, data) {
+            if (ws && isConnected) {
+                ws.send(JSON.stringify({
+                    type: 'input',
+                    inputType: type,
+                    data: data
+                }));
+            }
+        }
+        
+        // ==================== لوحة المفاتيح ====================
+        function sendChar(char) {
+            sendInput('keyboard', { type: 'char', char });
+        }
+        
+        function sendKey(key) {
+            sendInput('keyboard', { type: 'key', key });
+        }
+        
+        function backspace() {
+            sendKey('backspace');
+        }
+        
+        function toggleKeyboard() {
+            const kb = document.getElementById('virtualKeyboard');
+            kb.classList.toggle('visible');
+        }
+        
+        // ==================== وظائف مساعدة ====================
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+        
+        function takeScreenshot() {
+            const video = document.getElementById('remoteVideo');
+            if (!video.srcObject) return;
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            
+            const link = document.createElement('a');
+            link.download = `winland-screenshot-${Date.now()}.png`;
+            link.href = canvas.toDataURL();
+            link.click();
+            
+            showNotification('تم', 'تم حفظ لقطة الشاشة');
+        }
+        
+        function showNotification(title, message) {
+            const container = document.getElementById('notifications');
+            const notif = document.createElement('div');
+            notif.className = 'notification';
+            notif.innerHTML = `
+                <div class="notification-title">${title}</div>
+                <div class="notification-message">${message}</div>
+            `;
+            container.appendChild(notif);
+            
+            setTimeout(() => {
+                notif.remove();
+            }, 5000);
+        }
+        
+        function showLoading(show) {
+            document.getElementById('loadingOverlay').classList.toggle('visible', show);
+        }
+        
+        // ==================== التهيئة ====================
+        window.onload = () => {
+            // تحميل الإعدادات المحفوظة
+            const savedServer = localStorage.getItem('winland_server');
+            const savedPassword = localStorage.getItem('winland_password');
+            
+            if (savedServer) {
+                document.getElementById('serverAddress').value = savedServer;
+            }
+            if (savedPassword) {
+                document.getElementById('password').value = savedPassword;
+                document.getElementById('rememberMe').checked = true;
+            }
+            
+            // التحقق من دعم WebRTC
+            if (!window.RTCPeerConnection) {
+                alert('متصفحك لا يدعم WebRTC. يرجى استخدام متصفح حديث.');
+            }
+        };
+        
+        // تنظيف عند إغلاق الصفحة
+        window.onbeforeunload = () => {
+            disconnect();
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<resources>
+    <string name="app_name">Winland Server</string>
+    <string name="app_name_short">Winland</string>
+    <string name="service_name">Winland Server Service</string>
+    <string name="notification_title">Winland Server</string>
+    <string name="notification_text">Wayland Compositor is running</string>
+    <string name="start_server">Start Server</string>
+    <string name="stop_server">Stop Server</string>
+    <string name="show_window">Show Window</string>
+    <string name="hide_window">Hide Window</string>
+    <string name="settings">Settings</string>
+    <string name="about">About</string>
+    <string name="clear_log">Clear Log</string>
+    <string name="status_stopped">Status: Stopped</string>
+    <string name="status_initializing">Status: Initializing...</string>
+    <string name="status_running">Status: Running</string>
+    <string name="status_error">Status: Error</string>
+    <string name="error_permission_overlay">Overlay permission is required</string>
+    <string name="error_permission_storage">Storage permission is required</string>
+    <string name="error_permission_audio">Audio permission is required</string>
+    <string name="error_service_not_bound">Service not bound</string>
+    <string name="error_server_start_failed">Failed to start server</string>
+    <string name="toast_server_started">Winland Server started</string>
+    <string name="toast_server_stopped">Winland Server stopped</string>
+    <string name="about_title">About Winland Server</string>
+    <string name="about_message">Winland Server v1.0.0\n\nAndroid Wayland Compositor\n\nThis application provides a Wayland compositor for running Linux GUI applications on Android.</string>
+</resources>

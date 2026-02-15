@@ -1,0 +1,23 @@
+// Top-level build file
+plugins {
+    id 'com.android.application' version '8.2.0' apply false
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+ext {
+    compileSdkVersion = 34
+    targetSdkVersion = 34
+    minSdkVersion = 26
+    buildToolsVersion = "34.0.0"
+    ndkVersion = "25.2.9519653"
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}

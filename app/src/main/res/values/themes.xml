@@ -1,0 +1,36 @@
+<resources>
+    <!-- سمة التطبيق الأساسية -->
+    <style name="Theme.WinlandServer" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <!-- الألوان الأساسية -->
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryVariant">@color/primary_dark</item>
+        <item name="colorOnPrimary">@color/white</item>
+        
+        <!-- الألوان الثانوية -->
+        <item name="colorSecondary">@color/accent</item>
+        <item name="colorSecondaryVariant">@color/accent</item>
+        <item name="colorOnSecondary">@color/black</item>
+        
+        <!-- لون الحالة -->
+        <item name="android:statusBarColor">@color/primary_dark</item>
+        
+        <!-- الخلفية -->
+        <item name="android:windowBackground">@color/gray_900</item>
+        
+        <!-- نص -->
+        <item name="android:textColorPrimary">@color/white</item>
+        <item name="android:textColorSecondary">@color/gray_400</item>
+    </style>
+    
+    <!-- سمة بدون شريط إجراءات -->
+    <style name="Theme.WinlandServer.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+    
+    <!-- سمة شريط التطبيق -->
+    <style name="Theme.WinlandServer.AppBarOverlay" parent="ThemeOverlay.AppCompat.Dark.ActionBar" />
+    
+    <!-- سمة المنبثقة -->
+    <style name="Theme.WinlandServer.PopupOverlay" parent="ThemeOverlay.AppCompat.Light" />
+</resources>
