@@ -577,16 +577,16 @@ public class PackageManagerActivity extends Activity {
         
         private int getCategoryIcon(String category) {
             switch (category.toLowerCase()) {
-                case "internet": return R.drawable.ic_globe;
-                case "office": return R.drawable.ic_file_text;
-                case "development": return R.drawable.ic_code;
-                case "media": return R.drawable.ic_play_circle;
-                case "graphics": return R.drawable.ic_image;
-                case "games": return R.drawable.ic_gamepad;
-                case "tools": return R.drawable.ic_wrench;
-                case "communication": return R.drawable.ic_message;
-                case "desktop": return R.drawable.ic_monitor;
-                default: return R.drawable.ic_package;
+                case "internet": return R.mipmap.ic_globe;
+                case "office": return R.mipmap.ic_file_text;
+                case "development": return R.mipmap.ic_code;
+                case "media": return R.mipmap.ic_play_circle;
+                case "graphics": return R.mipmap.ic_image;
+                case "games": return R.mipmap.ic_gamepad;
+                case "tools": return R.mipmap.ic_launcher;
+                case "communication": return R.mipmap.ic_launcher;
+                case "desktop": return R.mipmap.ic_launcher;
+                default: return R.mipmap.ic_launcher;
             }
         }
         
