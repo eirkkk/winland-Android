@@ -1,262 +1,272 @@
 # Winland Server 🐧📱
 
-**Wayland Compositor for Android**
+**Native Wayland Compositor for Android**
 
-Winland Server is a full-featured Wayland compositor that runs on Android devices, allowing you to run Linux GUI applications directly on your phone or tablet.
+Winland Server is a full-featured Wayland compositor that runs natively on Android devices, enabling Linux GUI applications to run directly on phones and tablets. Built with the [Smithay](https://github.com/Smithay/smithay) compositor library in Rust with a Kotlin/Compose Multiplatform UI.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Platform](https://img.shields.io/badge/platform-Android-green.svg)
-![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Android%208.0%2B-green.svg)](app/build.gradle.kts)
+[![Architecture](https://img.shields.io/badge/arch-ARM64-red.svg)](.cargo/config.toml)
+[![API](https://img.shields.io/badge/API-26%2B-orange.svg)](app/build.gradle.kts)
+
+---
 
 ## ✨ Features
 
-### Core Features
-- 🖥️ **Full Wayland Compositor**: Complete implementation of Wayland protocol
-- 🎮 **Hardware Acceleration**: OpenGL ES 2.0/3.0 support with zero-copy buffer sharing
-- 🖱️ **Input Handling**: Touch, keyboard, and mouse support
-- 🔊 **Audio Bridge**: PulseAudio/PipeWire integration
-- 🔌 **USB Redirection**: Access USB devices from Linux apps
+### 🖥️ Wayland Compositor
+- Full Wayland protocol implementation via Rust/Smithay stack
+- OpenGL ES 2.0 hardware-accelerated rendering via EGL
+- Fractional scaling support (1080p / 720p resolution presets)
+- XWayland compatibility for X11-only applications
+- SHM and DMA-BUF buffer strategies
 
-### Advanced Features
-- 🪟 **Tiling Window Manager**: i3/Sway-style layouts (tiling, monocle, grid, spiral, dwindle)
-- 📺 **VNC Server**: Remote access to your Android desktop
-- 📋 **Shared Clipboard**: Copy/paste between Android and Linux apps
-- 🐛 **Debug Overlay**: Real-time performance monitoring
-- 🔐 **Root Support**: Magisk/KernelSU integration for enhanced functionality
+### 🎮 Input Modes
+- **Touch** — Direct touch-to-Wayland-touch translation with gesture support (window move/resize, 3-finger swipe to cycle windows)
+- **Trackpad** — Relative pointer motion with acceleration, two-finger tap for click, pinch-to-zoom
+- **Mouse** — Absolute pointer emulation with constrained-relative mode for pointer-lock applications (games, design tools)
 
-### Performance Optimizations
-- ⚡ **Zero-Copy DMA-BUF**: Direct buffer sharing for minimal overhead
-- 🎯 **Hardware Compositing**: GPU-accelerated rendering
-- 💾 **Memory Efficient**: Optimized for mobile devices
-- 🔋 **Battery Friendly**: Optimized rendering loop
+### 📦 Linux Distro Management
+- Install, setup, run, stop, and restart Linux distributions
+- Root filesystem download and extraction
+- Chroot-based isolation with bind-mount management
+- Clean unmount on shutdown/reboot
+
+### 🔊 Audio & USB
+- Audio bridge via CPAL (cross-platform audio library)
+- USB device redirection for peripherals
+
+### 🔧 Developer Tools
+- Live log panel with search, copy, and pause
+- Real-time compositor diagnostics (FPS, surface count, input events)
+- Runtime stats overlay
+- Debug logging via Android logcat
+
+---
 
 ## 📋 Requirements
 
-### Minimum Requirements
-- Android 8.0 (API 26) or higher
-- ARM64 or ARMv7 processor
-- 2GB RAM
-- 500MB free storage
+| Requirement | Minimum | Recommended |
+|------------|---------|-------------|
+| **OS** | Android 8.0 (API 26) | Android 10+ |
+| **Architecture** | ARM64 (arm64-v8a) | ARM64 |
+| **RAM** | 3 GB | 6 GB+ |
+| **Storage** | 2 GB free | 8 GB+ |
+| **GPU** | OpenGL ES 2.0 | OpenGL ES 3.0+ |
 
-### Recommended
-- Android 10+ with root access (Magisk/KernelSU)
-- 4GB+ RAM
-- Adreno 500 series or Mali-G71+ GPU
+---
 
-## 🚀 Installation
+## 🚀 Quick Start
 
-### Method 1: APK Installation (Non-root)
-1. Download the latest APK from [Releases](../../releases)
-2. Enable "Install from Unknown Sources" in Settings
-3. Install the APK
-4. Launch Winland Server and tap "Start Server"
+### Install APK
+1. Download the latest APK from [Releases](https://github.com/anomalyco/winland-android/releases)
+2. Enable **Install from Unknown Sources** in Android Settings
+3. Install the APK and launch **Winland Server**
+4. Select a Linux distribution from the **Home** tab and tap **Install**
+5. Once installed, tap **Run** to start the compositor
 
-### Method 2: Termux (Recommended)
+### Build from Source
+
+**Prerequisites:**
+- Android Studio Hedgehog (2023.1.1+) or newer
+- Android NDK r26+ (set path in `.cargo/config.toml`)
+- Rust toolchain with `aarch64-linux-android` target
+- JDK 17+
+
 ```bash
-# Install Termux from F-Droid
-pkg update
-pkg install git
+git clone https://github.com/anomalyco/winland-android.git
+cd winland-android
 
-# Clone the repository
-git clone https://github.com/yourusername/winland-server.git
-cd winland-server
+# Install dependencies
+make setup
 
-# Run setup script
-bash scripts/setup-termux.sh
+# Full build (Rust + bindings + APK)
+make build
 
-# Build and run
-bash scripts/build-automation.sh
+# Or build individually:
+make build-rust        # Build Rust library only
+make generate-bindings # Generate UniFFI bindings
+make build-app         # Build Android APK
+
+# Build release with LTO/NEON optimizations
+make build-release
+
+# Install on connected device
+make install
 ```
 
-### Method 3: Magisk Module (Root)
-1. Download `winland-magisk-module.zip`
-2. Open Magisk Manager
-3. Go to Modules → Install from Storage
-4. Select the ZIP file and reboot
-
-## 🔧 Building from Source
-
-### Prerequisites
-- Android Studio Arctic Fox or newer
-- Android NDK r25c or newer
-- CMake 3.22+
-- Python 3.8+
-
-### Build Steps
+**Manual build:**
 ```bash
-# Clone repository
-git clone https://github.com/yourusername/winland-server.git
-cd winland-server
+# Build Rust native library
+cargo build --release --target aarch64-linux-android --features smithay_android
 
-# Download dependencies and build
-bash scripts/build-automation.sh all
+# Copy library
+cp native/target/aarch64-linux-android/release/libuniffi_winland_core.so \
+   app/src/main/jniLibs/arm64-v8a/
 
-# Or build specific components
-bash scripts/build-automation.sh native    # Native code only
-bash scripts/build-automation.sh app       # Android app only
+# Build APK
+./gradlew clean assembleDebug
 ```
 
-### Build Options
-```bash
-# Clean build
-bash scripts/build-automation.sh --clean all
+See [BUILD_ARM64.md](BUILD_ARM64.md) for detailed ARM64 build instructions.
 
-# Parallel build with 4 jobs
-bash scripts/build-automation.sh --jobs 4 all
-
-# Verbose output
-bash scripts/build-automation.sh --verbose all
-```
+---
 
 ## 📖 Usage
 
-### Starting the Server
-1. Open Winland Server app
-2. Grant necessary permissions (Overlay, Storage, Audio)
-3. Tap "Start Server"
-4. The floating window will appear
+### Dashboard
+The main dashboard has three tabs:
 
-### Connecting Linux Apps
+| Tab | Description |
+|-----|-------------|
+| **Home** | Distro management (install/setup/run/stop/restart), live logs, connection instructions |
+| **Terminal** | Embedded Android terminal via Termux emulator library |
+| **Settings** | Display (resolution), input mode (Touch/Trackpad/Mouse), scroll sensitivity, refresh rate, theme, runtime controls |
+
+### Input Mode Descriptions
+| Mode | Best For | Behavior |
+|------|----------|----------|
+| **Touch** | General navigation | Direct touch input, window move/resize by titlebar/edges, 3-finger swipe to cycle windows |
+| **Trackpad** | Precise cursor control | Smooth relative motion with acceleration, one-finger drag, two-finger tap for click |
+| **Mouse** | Gaming / pointer-lock | Absolute pointer positioning, constrained-relative mode for pointer lock |
+
+### Display Settings
+- **1080p** (scale 1.0) — Native resolution, sharper text
+- **720p** (scale 1.5) — Larger UI elements, better readability on small screens
+
+### Running Linux Apps
+Once the compositor is running (tap **Run**), Linux applications connect to the Wayland socket:
 ```bash
-# Set Wayland display
 export WAYLAND_DISPLAY=wayland-0
 export XDG_RUNTIME_DIR=/data/data/com.winland.server/files
-
-# Run your favorite Linux app
-weston-terminal
-firefox
-vlc
+your-linux-app
 ```
 
 ### Keyboard Shortcuts
-- `Super + Enter`: Open terminal
-- `Super + Q`: Close focused window
-- `Super + Arrow Keys`: Focus window in direction
-- `Super + Shift + Arrow Keys`: Move window
-- `Super + 1-9`: Switch workspace
-- `Super + Shift + 1-9`: Move window to workspace
-- `Super + F`: Toggle fullscreen
-- `Super + Space`: Next layout
-- `Super + Shift + Space`: Previous layout
+| Shortcut | Action |
+|----------|--------|
+| `Alt + Tab` | Cycle through windows forward |
+| `Alt + Shift + Tab` | Cycle through windows backward |
+| Titlebar ✕ button | Close window |
 
-### Tiling Layouts
-- **Tiling**: Windows arranged side by side
-- **Monocle**: Single window fullscreen
-- **Grid**: Windows in a grid pattern
-- **Stacked**: Windows stacked with titles
-- **Tabbed**: Windows as tabs
-- **Spiral**: Fibonacci spiral layout
-- **Dwindle**: Binary space partitioning
+---
 
-## 🔌 VNC Remote Access
+## 🏗️ Architecture
 
-Enable VNC server to access your Android desktop remotely:
-
-```bash
-# In Winland Server settings, enable VNC
-# Default port: 5900
-
-# Connect from another device
-vncviewer android-device-ip:5900
+```
+┌─────────────────────────────────────────────────────┐
+│                   Android Device                     │
+│  ┌───────────────────────────────────────────┐      │
+│  │          Kotlin/Compose UI                 │      │
+│  │  ┌────────┐  ┌──────────┐  ┌───────────┐  │      │
+│  │  │Dashboard│  │ Display  │  │ Terminal  │  │      │
+│  │  │ Screen  │  │ Activity │  │ Activity  │  │      │
+│  │  └────────┘  └──────────┘  └───────────┘  │      │
+│  └───────────────────────────────────────────┘      │
+│                          │ JNI / UniFFI             │
+│  ┌───────────────────────────────────────────┐      │
+│  │          Rust Native Library               │      │
+│  │  ┌────────────┐  ┌──────────────────┐     │      │
+│  │  │  JNI Bridge │  │  Wayland Server   │     │      │
+│  │  │  (input,    │  │  (Smithay-based)  │     │      │
+│  │  │   surface,  │  │  ┌────────────┐   │     │      │
+│  │  │   lifecycle)│  │  │ Seat/Input │   │     │      │
+│  │  └────────────┘  │  ├────────────┤   │     │      │
+│  │                  │  │ Shell (XDG)│   │     │      │
+│  │  ┌────────────┐  │  ├────────────┤   │     │      │
+│  │  │  Audio /   │  │  │ Renderer   │   │     │      │
+│  │  │  USB /     │  │  │ (OpenGL ES)│   │     │      │
+│  │  │  Distro    │  │  └────────────┘   │     │      │
+│  │  └────────────┘  └──────────────────┘     │      │
+│  └───────────────────────────────────────────┘      │
+└─────────────────────────────────────────────────────┘
 ```
 
-## 🐛 Debug Mode
+### Key Components
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **UI** | Kotlin + Compose | Dashboard, settings, live logs |
+| **Display** | SurfaceView + EGL | Full-screen compositor output, touch input routing |
+| **Bridge** | JNI + UniFFI | Kotlin↔Rust communication |
+| **Compositor** | Rust (Smithay) | Wayland protocol, input routing, shell management |
+| **Rendering** | OpenGL ES 2.0 | Surface compositing, texture upload, NDC mapping |
+| **Audio** | CPAL | Audio playback from Linux apps |
+| **Distro** | Rust bindings | Rootfs management, chroot lifecycle |
 
-Enable debug overlay to monitor performance:
+---
 
-```bash
-# In app settings, enable Debug Overlay
-# Or via ADB:
-adb shell am start -a android.intent.action.MAIN \
-    -n com.winland.server/.MainActivity \
-    --ez enable_debug true
-```
+## 🛠️ Makefile Targets
 
-Debug info includes:
-- FPS and frame time
-- Memory usage
-- Surface count
-- Input events
-- Draw calls
-- Connected clients
+| Target | Description |
+|--------|-------------|
+| `make setup` | Install Rust ARM64 target, create cargo config |
+| `make build-rust` | Build Rust library for ARM64, copy .so to jniLibs |
+| `make generate-bindings` | Generate UniFFI Kotlin bindings from UDL |
+| `make build-app` | Build APK (requires built Rust library) |
+| `make build` | Full build (Rust → bindings → APK) |
+| `make build-release` | Release build with LTO/NEON |
+| `make install` | Build + install APK via adb |
+| `make clean` | Clean Gradle + Cargo artifacts |
+| `make test` | Run Rust + Gradle tests |
+| `make lint` | Run Clippy + Android lint |
+| `make docs` | Generate Rust documentation |
 
-## 🔐 Security
+---
 
-### Rootless Mode
-Winland Server can run without root, but with limited functionality:
-- ✅ Basic Wayland compositor
-- ✅ Software rendering
-- ❌ Hardware acceleration
-- ❌ USB redirection
-- ❌ Some input devices
-
-### Sandboxing
-When running with root, the server uses namespaces to sandbox Linux applications:
-- Isolated filesystem view
-- Restricted network access
-- Limited device access
-
-## 🛠️ Troubleshooting
-
-### Common Issues
-
-#### "Cannot start server"
-- Check if overlay permission is granted
-- Ensure sufficient RAM is available
-- Try restarting the app
-
-#### "Black screen"
-- Verify GPU drivers are up to date
-- Try software rendering mode
-- Check logcat for errors
-
-#### "Apps not connecting"
-- Verify `WAYLAND_DISPLAY` is set correctly
-- Check `XDG_RUNTIME_DIR` permissions
-- Ensure the server socket exists
+## 🐛 Debugging & Diagnostics
 
 ### Log Collection
 ```bash
-# Collect logs for bug reports
+# Filter Winland logs
+adb logcat -s WinlandServer,NativeBridge,SmithayRuntime,Compositor
+
+# Full dump with memory info
 adb logcat -d > winland-logs.txt
 adb shell dumpsys meminfo com.winland.server >> winland-logs.txt
 ```
 
+### Runtime Stats
+The compositor exposes real-time diagnostics via `getWaylandRuntimeStats()` (accessible from the Dashboard debug panel).
+
+### Common Issues
+
+| Symptom | Likely Cause | Solution |
+|---------|-------------|----------|
+| Black screen | EGL init failure / Surface not bound | Restart the compositor |
+| Input not working | Wrong input mode | Switch mode in Settings tab |
+| Apps crash on connect | XDG_RUNTIME_DIR permissions | Ensure directory is accessible |
+| Low FPS | Missing GPU acceleration | Verify OpenGL ES support |
+
+---
+
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for our contribution guidelines, code of conduct, and development workflow.
 
-### Development Setup
-```bash
-# Fork and clone
-git clone https://github.com/yourusername/winland-server.git
+### Development Process
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes following Conventional Commits
+4. Push and open a Pull Request
 
-# Create branch
-git checkout -b feature/your-feature
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed system architecture documentation.
 
-# Make changes and commit
-git commit -am "Add your feature"
-
-# Push and create PR
-git push origin feature/your-feature
-```
+---
 
 ## 📄 License
 
-Winland Server is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+Distributed under the **MIT License**. See [LICENSE](LICENSE) for more information.
+
+Copyright (c) 2024 Winland Server Contributors
+
+---
 
 ## 🙏 Acknowledgments
 
-- [Wayland](https://wayland.freedesktop.org/) - Display server protocol
-- [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots/) - Reference compositor library
-- [Sway](https://swaywm.org/) - Tiling Wayland compositor inspiration
-- [Termux](https://termux.com/) - Android terminal emulator
-
-## 📞 Support
-
-- 📧 Email: support@winland-server.dev
-- 💬 Discord: [Join our server](https://discord.gg/winland)
-- 🐛 Issues: [GitHub Issues](../../issues)
+- [Smithay](https://github.com/Smithay/smithay) — Rust Wayland compositor library
+- [Wayland](https://wayland.freedesktop.org/) — Display server protocol
+- [Termux](https://termux.com/) — Android terminal emulator (terminal-view/terminal-emulator modules)
+- [UniFFI](https://github.com/mozilla/uniffi-rs) — Rust-to-Kotlin bindings generator
+- [Android NDK](https://developer.android.com/ndk) — Native development kit
 
 ---
 
