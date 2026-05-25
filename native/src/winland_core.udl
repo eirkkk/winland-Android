@@ -1,0 +1,17 @@
+namespace winland_core {
+    void init_compositor();
+    void init_audio();
+    void init_usb(i32 fd);
+    boolean get_root_mode();
+    string get_version();
+};
+
+callback interface LogCallback {
+    void on_log(string level, string message);
+};
+
+interface WinlandServer {
+    constructor(string base_path);
+    void install_distro(string name, string url, LogCallback callback);
+    sequence<string> list_distros();
+};

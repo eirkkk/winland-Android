@@ -1,0 +1,69 @@
+[package]
+name = "winland_core"
+version = "0.2.0"
+edition = "2021"
+
+[lib]
+name = "uniffi_winland_core"
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+panic = "unwind"
+
+[profile.dev]
+panic = "unwind"
+
+[[bin]]
+name = "winland-setup"
+path = "src/bin/winland-setup.rs"
+
+[features]
+default = []
+profiling = ["dep:tracy-client"]
+patched_graphics = ["dep:smithay"]
+xwayland = ["smithay/xwayland"]
+smithay_android = ["patched_graphics", "xwayland", "smithay/backend_egl", "smithay/renderer_gl", "smithay/wayland_frontend", "smithay/xwayland", "dep:xkbcommon"]
+
+[dependencies]
+# Android & Native Integration
+jni = "0.21.1"
+android_logger = "0.15.1"
+log = "0.4.29"
+tracing = "0.1"
+tracing-log = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+ndk = "0.9.0"
+ndk-sys = "0.6.0"
+libc = "0.2.186"
+# Utilities
+lazy_static = "1.5.0"
+uniffi = { version = "0.31.0", features = ["cli"] }
+anyhow = "1.0.102"
+thiserror = "2.0.18"
+nix = { version = "0.31.2", features = ["fs", "socket", "uio"] }
+libloading = "0.9.0"
+khronos-egl = { version = "6.0.0", features = ["dynamic"] }
+gl = "0.14.0"
+memmap2 = "0.9.10"
+parking_lot = "0.12.3"
+crossbeam-channel = "0.5"
+async-io = "2.4.0"
+euclid = "0.22.11"
+tracy-client = { version = "0.17.0", features = ["enable"], optional = true }
+# Graphics & Wayland (Smithay Stack)
+xkbcommon = { version = "0.9.0", features = ["wayland"], optional = true }
+wayland-protocols = { version = "0.32.12", default-features = false, features = ["unstable"] }
+smithay = { path = "lib/smithay", default-features = false, features = ["wayland_frontend", "wayland-protocols", "desktop", "wayland-server", "renderer_glow", "xwayland"], optional = true }
+winit = { path = "lib/winit/winit", default-features = false, features = ["android-native-activity", "wayland"], optional = true }
+
+# Android / Wayland extras
+robius-directories = "5.0.1"   # مسار XDG_RUNTIME_DIR الآمن على Android
+cpal = "0.15.3"                # الصوت (تشغيل/تسجيل) عبر AAudio/OpenSL
+nokhwa = { version = "0.10.7", features = ["input-native", "rgb"] }  # الكاميرا
+sysinfo = "0.30.0"             # معلومات النظام (CPU, RAM, ...)
+# hbm is disabled because the current Android cross-build breaks on nix::sys::stat::makedev
+# hbm = { version = "0.1.6", features = ["drm", "ash"] }
+
+[build-dependencies]
+uniffi = { version = "0.31.0", features = ["build"] }
+cc = "1.2.15"

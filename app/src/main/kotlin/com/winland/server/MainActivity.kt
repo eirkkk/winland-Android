@@ -1,0 +1,204 @@
+package com.winland.server
+
+import android.content.Context
+import android.content.Intent
+import android.hardware.usb.UsbManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.PowerManager
+import android.os.SystemClock
+import android.provider.Settings
+import android.util.Log
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
+import com.winland.server.ui.RootAccessRequiredDialog
+import com.winland.server.ui.WinlandDashboardActions
+import com.winland.server.ui.WinlandDashboardScreen
+import com.winland.server.ui.theme.WinlandServerTheme
+import com.winland.server.utils.RootUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+class MainActivity : ComponentActivity() {
+
+    private val TAG = "MainActivity"
+
+    private var serviceStarted = false
+    private val uiViewModel: MainViewModel by viewModels()
+    private val actionCoordinator by lazy {
+        MainActionCoordinator(
+            appContext = this,
+            scope = lifecycleScope,
+            viewModel = uiViewModel,
+            showToast = ::showToastSafe,
+            runtimeLauncher = RuntimeLauncher {
+                startWinlandService()
+                startActivity(Intent(this, DisplayActivity::class.java))
+            }
+        )
+    }
+
+    private val usbManager by lazy {
+        getSystemService(Context.USB_SERVICE) as UsbManager
+    }
+    private val platformController by lazy {
+        MainActivityPlatformController(
+            activity = this,
+            usbManager = usbManager,
+            showToast = ::showToastSafe
+        )
+    }
+
+    private fun showToastSafe(message: String, longDuration: Boolean = false) {
+        if (isFinishing || isDestroyed) return
+        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return
+        runOnUiThread {
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            Toast.makeText(
+                this,
+                message,
+                if (longDuration) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.all { it.value }
+        if (!allGranted) {
+            showToastSafe("Required permissions denied")
+        }
+    }
+
+    private inline fun traceLifecycle(name: String, block: () -> Unit) {
+        val start = SystemClock.elapsedRealtime()
+        Log.i(TAG, "$name start")
+        try {
+            block()
+        } finally {
+            val elapsed = SystemClock.elapsedRealtime() - start
+            Log.i(TAG, "$name end (${elapsed}ms)")
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        traceLifecycle("onCreate") {
+            super.onCreate(savedInstanceState)
+
+            if (!NativeBridge.isLoaded()) {
+                showToastSafe("CRITICAL ERROR: Native libraries failed to load. The app cannot function.", longDuration = true)
+            } else {
+                // Keep runtime sockets (wayland/audio) available as soon as app opens.
+                // Socket bootstrap moved to WinlandService (onCreate) for lifecycle ordering.
+                startWinlandService()
+            }
+
+            platformController.registerUsbReceiver()
+
+            // Request permissions after a short delay to avoid blocking the window
+            // during first layout (prevents ANR from FocusEvent timeout)
+            lifecycleScope.launch {
+                delay(500)
+                platformController.requestRequiredPermissions(permissionLauncher)
+                requestBatteryOptimizationExemptionIfNeeded()
+            }
+
+            setContent {
+                val themeSettings by uiViewModel.themeSettings.collectAsState()
+
+                WinlandServerTheme(darkTheme = if (themeSettings.followSystemTheme) isSystemInDarkTheme() else themeSettings.darkModeEnabled) {
+                    val scope = rememberCoroutineScope()
+                    var isRootAvailable by remember { mutableStateOf(true) }
+                    var showRootDialog by remember { mutableStateOf(false) }
+
+                    LaunchedEffect(Unit) {
+                        val root = withContext(Dispatchers.IO) { RootUtils.isRootAvailable() }
+                        isRootAvailable = root
+                        showRootDialog = !root
+                    }
+
+                    if (showRootDialog) {
+                        RootAccessRequiredDialog(
+                            onRetry = {
+                                scope.launch {
+                                    val root = withContext(Dispatchers.IO) { RootUtils.isRootAvailable() }
+                                    if (root) showRootDialog = false
+                                }
+                            }
+                        )
+                    }
+
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        WinlandDashboardScreen(
+                            distros = DistroCatalog.supportedDistros,
+                            viewModel = uiViewModel,
+                            actions = WinlandDashboardActions(
+                                onRequestUsb = { platformController.requestUsbPermission() },
+                                onDistroInstall = { distro -> actionCoordinator.handleDistroInstall(distro) },
+                                onDistroSetup = { distroId -> actionCoordinator.handleDistroSetup(distroId) },
+                                onDistroRun = { distroId -> actionCoordinator.handleDistroRun(distroId) },
+                                onDistroStop = { actionCoordinator.handleDistroStop() },
+                                onDistroRestart = { actionCoordinator.handleDistroRestart() },
+                                onShowMessage = ::showToastSafe
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        traceLifecycle("onDestroy") {
+            super.onDestroy()
+            platformController.unregisterUsbReceiver()
+        }
+    }
+
+    private fun startWinlandService() {
+        if (serviceStarted) return
+        val intent = Intent(this, WinlandService::class.java)
+        startForegroundService(intent)
+        serviceStarted = true
+    }
+
+    private fun requestBatteryOptimizationExemptionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+
+        val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+        if (powerManager.isIgnoringBatteryOptimizations(packageName)) return
+
+        try {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Failed to request battery optimization exemption", e)
+        }
+    }
+
+}

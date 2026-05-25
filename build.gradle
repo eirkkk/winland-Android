@@ -1,0 +1,75 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.2.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.23"
+    }
+}
+
+def hasCargo = System.getenv("PATH")
+    ?.split(File.pathSeparator)
+    ?.any { p -> new File(p, "cargo").exists() }
+    ?: false
+
+def hasUniffiBindgen = System.getenv("PATH")
+    ?.split(File.pathSeparator)
+    ?.any { p -> new File(p, "uniffi-bindgen").exists() }
+    ?: false
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
+
+def rustTargets = ["aarch64-linux-android"]
+
+rustTargets.each { target ->
+    task "buildRust_${target}"(type: Exec) {
+        workingDir 'native'
+        if (target == 'aarch64-linux-android') {
+            commandLine 'cargo', 'build', '--release', '--target', target, '--features', 'smithay_android'
+        } else {
+            commandLine 'cargo', 'build', '--release', '--target', target
+        }
+    }
+}
+
+task buildRustAll {
+    rustTargets.each { dependsOn "buildRust_${it}" }
+}
+
+task generateUniFFIBindings(type: Exec) {
+    dependsOn "buildRust_aarch64-linux-android"
+    workingDir 'native'
+    commandLine 'uniffi-bindgen', 'generate', 'src/winland_core.udl', '--language', 'kotlin', '--no-format', '--out-dir', "${project(':app').projectDir}/src/main/kotlin/"
+}
+
+task copyNativeLibs {
+    dependsOn buildRustAll
+    doLast {
+        def jniMap = [
+            "aarch64-linux-android": "arm64-v8a"
+        ]
+
+        jniMap.each { rustTarget, jniDir ->
+            copy {
+                from "native/target/${rustTarget}/release/libuniffi_winland_core.so"
+                into "${project(':app').projectDir}/src/main/jniLibs/${jniDir}"
+            }
+        }
+    }
+}
+
+project(':app').afterEvaluate {
+    if (hasCargo && hasUniffiBindgen) {
+        tasks.matching { it.name.endsWith('NativeLibs') }.configureEach { dependsOn(copyNativeLibs) }
+        tasks.findByName('compileDebugKotlin')?.dependsOn(generateUniFFIBindings)
+    } else {
+        def missingTools = []
+        if (!hasCargo) missingTools << 'cargo'
+        if (!hasUniffiBindgen) missingTools << 'uniffi-bindgen'
+        logger.lifecycle("${missingTools.join(', ')} not found; skipping Rust/UniFFI regeneration tasks and using checked-in native artifacts.")
+    }
+}

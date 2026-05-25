@@ -1,0 +1,14 @@
+C:\Users\nadoo\Documents\winland-Android\native\temp_bindgen\target\release\deps\serde-a08fe090132785cb.d: C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\nadoo\Documents\winland-Android\native\temp_bindgen\target\release\build\serde-c8917dba7c9afd62\out/private.rs
+
+C:\Users\nadoo\Documents\winland-Android\native\temp_bindgen\target\release\deps\libserde-a08fe090132785cb.rlib: C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\nadoo\Documents\winland-Android\native\temp_bindgen\target\release\build\serde-c8917dba7c9afd62\out/private.rs
+
+C:\Users\nadoo\Documents\winland-Android\native\temp_bindgen\target\release\deps\libserde-a08fe090132785cb.rmeta: C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs C:\Users\nadoo\Documents\winland-Android\native\temp_bindgen\target\release\build\serde-c8917dba7c9afd62\out/private.rs
+
+C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs:
+C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs:
+C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs:
+C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs:
+C:\Users\nadoo\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs:
+C:\Users\nadoo\Documents\winland-Android\native\temp_bindgen\target\release\build\serde-c8917dba7c9afd62\out/private.rs:
+
+# env-dep:OUT_DIR=C:\\Users\\nadoo\\Documents\\winland-Android\\native\\temp_bindgen\\target\\release\\build\\serde-c8917dba7c9afd62\\out

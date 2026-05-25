@@ -1,0 +1,20 @@
+.gradle/
+build/
+app/build/
+native/target/
+app/.cxx/
+*.so
+!app/src/main/jniLibs/**/*.so
+*.aar
+local.properties
+.idea/
+*.iml
+
+# Build artifacts
+terminal-emulator/.cxx/
+terminal-view/.cxx/
+*.keystore
+.vscode/
+patches/build-libxkbcommon/libxkbcommon/
+.aider*
+winland-release.keystore

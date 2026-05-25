@@ -1,0 +1,91 @@
+use std::ffi::CString;
+use gl::types::*;
+
+pub fn compile_shader(src: &str, ty: GLenum) -> Result<GLuint, String> {
+    let shader = unsafe { gl::CreateShader(ty) };
+    let c_str = CString::new(src.as_bytes()).map_err(|e| e.to_string())?;
+    unsafe {
+        gl::ShaderSource(shader, 1, &c_str.as_ptr(), std::ptr::null());
+        gl::CompileShader(shader);
+
+        let mut status = gl::FALSE as GLint;
+        gl::GetShaderiv(shader, gl::COMPILE_STATUS, &mut status);
+
+        if status != (gl::TRUE as GLint) {
+            let mut len = 0;
+            gl::GetShaderiv(shader, gl::INFO_LOG_LENGTH, &mut len);
+            let mut buf = Vec::with_capacity(len as usize);
+            buf.set_len((len as usize) - 1); // subtract null terminator
+            gl::GetShaderInfoLog(
+                shader,
+                len,
+                std::ptr::null_mut(),
+                buf.as_mut_ptr() as *mut GLchar,
+            );
+            return Err(std::str::from_utf8(&buf)
+                .map_err(|e| e.to_string())?
+                .to_string());
+        }
+    }
+    Ok(shader)
+}
+
+pub fn link_program(vs: GLuint, fs: GLuint) -> Result<GLuint, String> {
+    let program = unsafe { gl::CreateProgram() };
+    unsafe {
+        gl::AttachShader(program, vs);
+        gl::AttachShader(program, fs);
+        
+        // Bind attributes beforehand for simplicity
+        let a_pos = CString::new("aPos").map_err(|e| e.to_string())?;
+        let a_tex = CString::new("aTex").map_err(|e| e.to_string())?;
+        gl::BindAttribLocation(program, 0, a_pos.as_ptr());
+        gl::BindAttribLocation(program, 1, a_tex.as_ptr());
+
+        gl::LinkProgram(program);
+
+        let mut status = gl::FALSE as GLint;
+        gl::GetProgramiv(program, gl::LINK_STATUS, &mut status);
+
+        if status != (gl::TRUE as GLint) {
+            let mut len = 0;
+            gl::GetProgramiv(program, gl::INFO_LOG_LENGTH, &mut len);
+            let mut buf = Vec::with_capacity(len as usize);
+            buf.set_len((len as usize) - 1);
+            gl::GetProgramInfoLog(
+                program,
+                len,
+                std::ptr::null_mut(),
+                buf.as_mut_ptr() as *mut GLchar,
+            );
+            return Err(std::str::from_utf8(&buf)
+                .map_err(|e| e.to_string())?
+                .to_string());
+        }
+    }
+    Ok(program)
+}
+
+pub const VS_SRC: &str = r#"
+attribute vec2 aPos;
+attribute vec2 aTex;
+varying vec2 vTex;
+void main() {
+    vTex = aTex;
+    gl_Position = vec4(aPos, 0.0, 1.0);
+}
+"#;
+
+// Fragment shader that handles ARGB to RGBA and flips Y axis for Android SurfaceView
+pub const FS_SRC: &str = r#"
+precision mediump float;
+varying vec2 vTex;
+uniform sampler2D uTex;
+void main() {
+    // Wayland buffers are often ARGB (B is at lowest byte in memory, then G, R, A)
+    // GLES GL_RGBA reads: [R, G, B, A] from [Byte0, Byte1, Byte2, Byte3]
+    // If input is BGRA, we swap R and B.
+    vec4 color = texture2D(uTex, vTex);
+    gl_FragColor = color.bgra; 
+}
+"#;
