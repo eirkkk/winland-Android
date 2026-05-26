@@ -14,6 +14,8 @@ use crate::android::backend::wayland::seat::WinlandInputMode;
 use crate::android::command_channel::{JniCommand, set_command_tx};
 #[cfg(feature = "smithay_android")]
 use smithay::reexports::wayland_server::Resource;
+#[cfg(feature = "smithay_android")]
+use smithay::wayland::selection::data_device::set_data_device_selection;
 
 struct CompositorRuntime {
     running: Arc<AtomicBool>,
@@ -259,8 +261,17 @@ pub fn spawn() -> Result<(), String> {
                     JniCommand::UpdateClipboard { text } => {
                         if let Some(server) = wayland_server.as_mut() {
                             if let Ok(mut guard) = server.runtime.clipboard_text.lock() {
-                                *guard = text;
+                                *guard = text.clone();
                             }
+                            set_data_device_selection::<crate::android::backend::wayland::seat::AndroidSeatRuntime>(
+                                &server.runtime.display_handle,
+                                &server.runtime.seat,
+                                vec![
+                                    "text/plain;charset=utf-8".to_string(),
+                                    "text/plain".to_string(),
+                                ],
+                                text,
+                            );
                         }
                     }
                     JniCommand::GetRuntimeStats { response } => {

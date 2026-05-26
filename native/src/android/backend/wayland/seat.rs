@@ -180,7 +180,7 @@ pub struct AndroidSeatRuntime {
     pub(crate) output_manager_state: OutputManagerState,
     pub(crate) data_device_state: DataDeviceState,
     pub(crate) display_handle: DisplayHandle,
-    pub(crate) _seat: Seat<Self>,
+    pub(crate) seat: Seat<Self>,
     pub(crate) output: Output,
     pub(crate) keyboard: Option<smithay::input::keyboard::KeyboardHandle<Self>>,
     pub(crate) pointer: smithay::input::pointer::PointerHandle<Self>,
@@ -479,7 +479,7 @@ impl AndroidSeatRuntime {
             output_manager_state,
             data_device_state,
             display_handle: display.clone(),
-            _seat: seat,
+            seat,
             output,
             keyboard,
             pointer,
@@ -738,7 +738,7 @@ impl AndroidSeatRuntime {
 
     pub(crate) fn sync_text_input_to_android(&self) {
         let mut has_active = false;
-        self._seat.text_input().with_active_text_input(|_, _| {
+        self.seat.text_input().with_active_text_input(|_, _| {
             has_active = true;
         });
         notify_android_ime(has_active);
