@@ -1,0 +1,61 @@
+# https://embarkstudios.github.io/cargo-deny
+# cargo install cargo-deny
+# cargo update && cargo deny check
+[graph]
+all-features = true
+exclude-dev = true
+targets = [
+    "aarch64-apple-darwin",
+    "aarch64-apple-ios",
+    "aarch64-linux-android",
+    "i686-pc-windows-gnu",
+    "i686-pc-windows-msvc",
+    "i686-unknown-linux-gnu",
+    { triple = "wasm32-unknown-unknown", features = [
+        "atomics",
+    ] },
+    "x86_64-apple-darwin",
+    "x86_64-apple-ios",
+    "x86_64-pc-windows-gnu",
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-redox",
+]
+
+[licenses]
+allow = [
+    "Apache-2.0",   # https://tldrlegal.com/license/apache-license-2.0-(apache-2.0)
+    "BSD-2-Clause", # https://tldrlegal.com/license/bsd-2-clause-license-(freebsd)
+    "BSD-3-Clause", # https://tldrlegal.com/license/bsd-3-clause-license-(revised)
+    "ISC",          # https://tldrlegal.com/license/isc-license
+    "MIT",          # https://tldrlegal.com/license/mit-license
+    "Unicode-3.0",  # https://spdx.org/licenses/Unicode-3.0.html
+    "Zlib",         # https://spdx.org/licenses/Zlib.html
+    "MPL-2.0",      # https://www.mozilla.org/en-US/MPL/2.0/
+]
+confidence-threshold = 1.0
+private = { ignore = true }
+
+[bans]
+multiple-versions = "deny"
+skip = [
+    { crate = "jni-sys@0.3", reason = "uses the semver trick to depend on v0.4, but `ndk` hasn't been updated to v0.4 yet" },
+    { crate = "thiserror@1.0", reason = "dep of `ndk` crate, yet to be updated" },
+    { crate = "thiserror-impl@1.0", reason = "dep of `thiserror`" },
+    { crate = "objc2@0.5", reason = "used by crossfont" },
+    { crate = "objc2-foundation@0.2", reason = "used by crossfont" },
+]
+skip-tree = [
+    { crate = "windows-sys", reason = "foundational but bumps fairly often, nothing we can do about it not having a shared version" },
+]
+
+[bans.build]
+bypass = [
+    { crate = "android-activity", allow-globs = ["android-games-sdk/import-games-sdk.sh"] },
+    { crate = "freetype-sys", allow-globs = ["freetype2/*"] },
+    # `crossfont` still depends (partially transitively) on `winapi`.
+    { crate = "winapi-i686-pc-windows-gnu", allow-globs = ["lib/lib*.a"] },
+    { crate = "winapi-x86_64-pc-windows-gnu", allow-globs = ["lib/lib*.a"] },
+]
+include-archives = true
+interpreted = "deny"
