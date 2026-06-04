@@ -28,7 +28,7 @@ Winland Server is a Wayland compositor designed specifically for Android devices
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │              Graphics & Rendering                    │   │
 │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐   │   │
-│  │  │   EGL   │ │ OpenGL  │ │ DMA-BUF │ │  VNC    │   │   │
+ │  │  │   EGL   │ │ OpenGL  │ │  VNC    │ │         │   │   │
 │  │  │ Display │ │   ES    │ │ Handler │ │ Server  │   │   │
 │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘   │   │
 │  └─────────────────────────────────────────────────────┘   │
@@ -88,11 +88,6 @@ The heart of Winland Server, implementing the Wayland protocol.
 - Renders surfaces using OpenGL ES 2.0/3.0
 - Applies transformations and effects
 - Composites multiple surfaces
-
-#### DMA-BUF Handler
-- Enables zero-copy buffer sharing
-- Imports/export DMA-BUF buffers
-- Optimizes performance
 
 #### VNC Server
 - Provides remote access to the display
