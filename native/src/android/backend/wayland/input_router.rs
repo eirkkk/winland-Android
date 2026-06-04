@@ -78,6 +78,19 @@ impl AndroidSeatRuntime {
     }
 
     pub(crate) fn choose_focus_candidate(&self) -> Option<WlSurface> {
+        let managed: std::collections::HashSet<WlSurface> = self.space
+            .elements()
+            .filter_map(|elem| elem.0.wl_surface().map(|s| s.as_ref().clone()))
+            .collect();
+
+        // Try MRU order first: most recently focused, alive, and in the space
+        for s in self.mru_list.iter().rev() {
+            if s.is_alive() && managed.contains(s) {
+                return Some(s.clone());
+            }
+        }
+
+        // Fallback to topmost in stacking order
         self.space
             .elements()
             .rev()
@@ -131,6 +144,10 @@ impl AndroidSeatRuntime {
         }
 
         self.focused_surface = Some(target.clone());
+
+        // Record in MRU list
+        self.mru_list.retain(|s| s != &target);
+        self.mru_list.push(target.clone());
 
         if let Some(window) = self.wl_to_window.get(&target) {
             window.set_activated(true);

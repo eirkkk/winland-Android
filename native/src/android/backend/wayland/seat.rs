@@ -229,6 +229,7 @@ pub struct AndroidSeatRuntime {
     pub(crate) touch_hold_origin: (f32, f32),
     pub(crate) last_window_cycle_ms: u32,
     pub(crate) window_cycle_cooldown_ms: u32,
+    pub(crate) mru_list: Vec<WlSurface>,
     pub(crate) rendering_active: bool,
     pub(crate) xwayland_shell_state: XWaylandShellState,
     pub(crate) x11_wm: Option<X11Wm>,
@@ -528,6 +529,7 @@ impl AndroidSeatRuntime {
             touch_hold_origin: (0.0, 0.0),
             last_window_cycle_ms: 0,
             window_cycle_cooldown_ms: 250,
+            mru_list: Vec::new(),
             rendering_active: true,
             minimized: HashMap::new(),
             maximize_restore: HashMap::new(),
@@ -714,8 +716,14 @@ impl AndroidSeatRuntime {
                 if let Some(x11) = window.x11_surface() {
                     let _ = x11.set_maximized(false);
                 }
+                // Clamp restore position to screen bounds
+                let (sw, sh) = self.usable_screen_size();
+                let clamped = (
+                    pos.x.max(0).min((sw - 100).max(0)),
+                    pos.y.max(self.reserved_top).min((sh - 100).max(self.reserved_top)),
+                );
                 self.space
-                    .relocate_element(&WindowElement(window.clone()), pos);
+                    .relocate_element(&WindowElement(window.clone()), clamped);
             }
         } else {
             if let Some(window) = self.wl_to_window.get(&surface) {
@@ -746,6 +754,7 @@ impl AndroidSeatRuntime {
         self.wl_to_window.retain(|s, _| s.is_alive());
         self.unmanaged_surfaces.retain(|s| s.is_alive());
         self.unmanaged_positions.retain(|s, _| s.is_alive());
+        self.mru_list.retain(|s| s.is_alive());
         self.minimized.retain(|s, _| s.is_alive());
         self.maximize_restore.retain(|s, _| s.is_alive());
         self.foreign_toplevel_handles.retain(|s, handle| {
