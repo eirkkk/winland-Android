@@ -79,7 +79,9 @@ impl XwmHandler for AndroidSeatRuntime {
     fn new_override_redirect_window(&mut self, _xwm: XwmId, window: X11Surface) {
         if let Some(wl) = window.wl_surface() {
             if !self.unmanaged_surfaces.contains(&wl) {
-                self.unmanaged_surfaces.push(wl);
+                let pos = window.geometry().loc;
+                self.unmanaged_surfaces.push(wl.clone());
+                self.unmanaged_positions.insert(wl, (pos.x, pos.y));
             }
         }
         log::debug!("XWayland: new_override_redirect_window id={}", window.window_id());
@@ -142,7 +144,9 @@ impl XwmHandler for AndroidSeatRuntime {
     fn mapped_override_redirect_window(&mut self, _xwm: XwmId, window: X11Surface) {
         if let Some(wl) = window.wl_surface() {
             if !self.unmanaged_surfaces.contains(&wl) {
+                let pos = window.geometry().loc;
                 self.unmanaged_surfaces.push(wl.clone());
+                self.unmanaged_positions.insert(wl, (pos.x, pos.y));
             }
         }
     }
@@ -150,6 +154,7 @@ impl XwmHandler for AndroidSeatRuntime {
     fn unmapped_window(&mut self, _xwm: XwmId, window: X11Surface) {
         if let Some(wl) = window.wl_surface() {
             self.unmanaged_surfaces.retain(|s| s != &wl);
+            self.unmanaged_positions.remove(&wl);
             if let Some(x11_window) = self.wl_to_window.remove(&wl) {
                 self.space.unmap_elem(&WindowElement(x11_window));
             }
@@ -172,6 +177,7 @@ impl XwmHandler for AndroidSeatRuntime {
     fn destroyed_window(&mut self, _xwm: XwmId, window: X11Surface) {
         if let Some(wl) = window.wl_surface() {
             self.unmanaged_surfaces.retain(|s| s != &wl);
+            self.unmanaged_positions.remove(&wl);
             if let Some(x11_window) = self.wl_to_window.remove(&wl) {
                 self.space.unmap_elem(&WindowElement(x11_window));
             }

@@ -208,6 +208,7 @@ pub struct AndroidSeatRuntime {
     pub(crate) popups: PopupManager,
     pub(crate) wl_to_window: HashMap<WlSurface, Window>,
     pub(crate) unmanaged_surfaces: Vec<WlSurface>,
+    pub(crate) unmanaged_positions: HashMap<WlSurface, (i32, i32)>,
     pub(crate) last_seat_dispatch: String,
     pub(crate) last_focus_decision: String,
     pub(crate) cursor_status: Option<CursorImageStatus>,
@@ -506,6 +507,7 @@ impl AndroidSeatRuntime {
             popups: PopupManager::default(),
             wl_to_window: HashMap::new(),
             unmanaged_surfaces: Vec::new(),
+            unmanaged_positions: HashMap::new(),
             last_seat_dispatch: "none".to_string(),
             last_focus_decision: "none".to_string(),
             cursor_status: None,
@@ -743,6 +745,7 @@ impl AndroidSeatRuntime {
         // إزالة الأسطح الميتة من الجداول
         self.wl_to_window.retain(|s, _| s.is_alive());
         self.unmanaged_surfaces.retain(|s| s.is_alive());
+        self.unmanaged_positions.retain(|s, _| s.is_alive());
         self.minimized.retain(|s, _| s.is_alive());
         self.maximize_restore.retain(|s, _| s.is_alive());
         self.foreign_toplevel_handles.retain(|s, handle| {
@@ -803,6 +806,7 @@ impl AndroidSeatRuntime {
             }
         }
         self.unmanaged_surfaces.retain(|s| s != popup_surface);
+        self.unmanaged_positions.remove(popup_surface);
         if self.popup_grab_surface.as_ref() == Some(popup_surface) {
             self.popup_grab_active = false;
             self.popup_grab_surface = None;
@@ -1117,7 +1121,8 @@ impl AndroidSeatRuntime {
                     }
 
                     if !pixels.is_empty() {
-                        render_list.push((pixels, 0, self.reserved_top, width, height, surface_scale));
+                        let upos = self.unmanaged_positions.get(s).copied().unwrap_or((0, self.reserved_top));
+                        render_list.push((pixels, upos.0, upos.1, width, height, surface_scale));
                     }
                 }) {
                     Ok(_) => {},
