@@ -1175,8 +1175,15 @@ impl AndroidSeatRuntime {
                                 .unwrap_or(Point::from((0, 0)))
                         });
 
-                        let cx = cursor_pos.x as i32 - hotspot.x;
-                        let cy = cursor_pos.y as i32 - hotspot.y;
+                        // M2: Default hotspot to center (8,8) if client didn't set one
+                        let (hx, hy) = if hotspot.x == 0 && hotspot.y == 0 {
+                            (8, 8)
+                        } else {
+                            (hotspot.x, hotspot.y)
+                        };
+
+                        let cx = cursor_pos.x as i32 - hx;
+                        let cy = cursor_pos.y as i32 - hy;
 
                         let buffer_info = Self::get_surface_buffer(wl_surface);
                         if let Some(buffer) = buffer_info {
