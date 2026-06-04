@@ -117,7 +117,27 @@ impl AndroidSeatRuntime {
         };
 
         let switched = self.focused_surface.as_ref() != Some(&target);
+
+        let old_focused = self.focused_surface.clone();
+        if switched {
+            if let Some(old_surface) = &old_focused {
+                if let Some(old_window) = self.wl_to_window.get(old_surface) {
+                    old_window.set_activated(false);
+                    if let Some(toplevel) = old_window.toplevel() {
+                        toplevel.send_configure();
+                    }
+                }
+            }
+        }
+
         self.focused_surface = Some(target.clone());
+
+        if let Some(window) = self.wl_to_window.get(&target) {
+            window.set_activated(true);
+            if let Some(toplevel) = window.toplevel() {
+                toplevel.send_configure();
+            }
+        }
 
         if let Some(keyboard) = self.keyboard.clone() {
             keyboard.set_focus(self, Some(target.clone()), SERIAL_COUNTER.next_serial());
@@ -325,6 +345,9 @@ impl AndroidSeatRuntime {
                             if let Some(xdg_toplevel) = window.toplevel() {
                                 xdg_toplevel.with_pending_state(|state| state.size = Some((nw, nh).into()));
                                 xdg_toplevel.send_configure();
+                            } else if let Some(x11) = window.x11_surface() {
+                                let rect = smithay::utils::Rectangle::new((nx, ny).into(), (nw.max(100), nh.max(100)).into());
+                                let _ = x11.configure(rect);
                             }
                         }
                     }
@@ -816,8 +839,9 @@ impl AndroidSeatRuntime {
                         }
                         if is_xwayland {
                             self.handle_absolute_pointer_down(*id, point);
+                        } else {
+                            self.handle_touch_down(*id, point, &focus);
                         }
-                        self.handle_touch_down(*id, point, &focus);
                     }
                     RoutedInputEvent::TouchMove { id, point } => {
                         if self.dispatch_touch_move_gesture(*id, point) {
@@ -825,8 +849,9 @@ impl AndroidSeatRuntime {
                         }
                         if is_xwayland {
                             self.handle_absolute_pointer_move(*id, point, &focus);
+                        } else {
+                            self.handle_touch_move(*id, point, &focus);
                         }
-                        self.handle_touch_move(*id, point, &focus);
                     }
                     RoutedInputEvent::TouchUp { id } => {
                         if self.dispatch_touch_up_gesture(*id) {
@@ -834,8 +859,9 @@ impl AndroidSeatRuntime {
                         }
                         if is_xwayland {
                             self.handle_absolute_pointer_up(*id);
+                        } else {
+                            self.handle_touch_up(*id);
                         }
-                        self.handle_touch_up(*id);
                     }
                     RoutedInputEvent::TouchCancel { .. } => {
                         let t = self.touch.clone();

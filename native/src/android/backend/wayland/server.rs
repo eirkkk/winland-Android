@@ -348,7 +348,12 @@ impl WaylandServer {
         }
 
         if let Some(ref mut event_loop) = self.xwayland_event_loop {
-            let _ = event_loop.dispatch(Duration::ZERO, &mut self.runtime);
+            if let Err(e) = event_loop.dispatch(Duration::ZERO, &mut self.runtime) {
+                log::error!("XWayland: event loop dispatch error: {:?}. Clearing XWayland state.", e);
+                self.xwayland_event_loop = None;
+                self.runtime.x11_wm = None;
+                let _ = self.xwayland_event_loop.take();
+            }
         }
 
         let dispatch_result = catch_unwind(AssertUnwindSafe(|| {
@@ -368,11 +373,10 @@ impl WaylandServer {
                     "unknown cause".to_string()
                 };
                 log::error!(
-                    "SmithayRuntime: dispatch_clients PANICKED: {}. Server will be recycled.",
+                    "SmithayRuntime: dispatch_clients PANICKED: {}. Server recovered.",
                     msg
                 );
                 let _ = self.display.flush_clients();
-                std::panic::resume_unwind(panic_info);
             }
         }
 
@@ -393,10 +397,9 @@ impl WaylandServer {
                     "unknown cause".to_string()
                 };
                 log::error!(
-                    "SmithayRuntime: flush_clients PANICKED: {}. Server will be recycled.",
+                    "SmithayRuntime: flush_clients PANICKED: {}. Server recovered.",
                     msg
                 );
-                std::panic::resume_unwind(panic_info);
             }
         }
     }

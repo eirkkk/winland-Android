@@ -31,7 +31,7 @@ use smithay::input::SeatState;
 #[cfg(feature = "smithay_android")]
 use smithay::output::{Mode as OutputMode, Output, PhysicalProperties, Scale, Subpixel};
 #[cfg(feature = "smithay_android")]
-use smithay::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_pointer_constraints_v1::ZwpPointerConstraintsV1;
+use smithay::wayland::pointer_constraints::PointerConstraintsState;
 #[cfg(feature = "smithay_android")]
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -57,8 +57,12 @@ use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::input_method::InputMethodManagerState;
+use smithay::wayland::pointer_gestures::PointerGesturesState;
+use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 #[cfg(feature = "smithay_android")]
-use smithay::wayland::output::OutputManagerState;
+use smithay::wayland::text_input::TextInputManagerState;
+#[cfg(feature = "smithay_android")]
+use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::presentation::PresentationState;
 #[cfg(feature = "smithay_android")]
@@ -66,25 +70,23 @@ use smithay::wayland::relative_pointer::RelativePointerManagerState;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::selection::data_device::DataDeviceState;
 #[cfg(feature = "smithay_android")]
-use smithay::wayland::selection::primary_selection::PrimarySelectionState;
-#[cfg(feature = "smithay_android")]
 use smithay::wayland::selection::wlr_data_control::DataControlState;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
 #[cfg(feature = "smithay_android")]
-use smithay::wayland::shell::xdg::XdgShellState;
-#[cfg(feature = "smithay_android")]
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
+#[cfg(feature = "smithay_android")]
+use smithay::wayland::shell::xdg::XdgShellState;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::shm::ShmState;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::single_pixel_buffer::SinglePixelBufferState;
 #[cfg(feature = "smithay_android")]
-use smithay::wayland::text_input::{TextInputManagerState, TextInputSeat};
-#[cfg(feature = "smithay_android")]
 use smithay::wayland::viewporter::ViewporterState;
 #[cfg(feature = "smithay_android")]
-use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
+use smithay::wayland::output::OutputManagerState;
+#[cfg(feature = "smithay_android")]
+use smithay::wayland::text_input::TextInputSeat;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::xdg_activation::XdgActivationState;
 #[cfg(feature = "smithay_android")]
@@ -245,6 +247,8 @@ pub struct AndroidSeatRuntime {
     pub(crate) trackpad_dragging: bool,
     pub(crate) xkb_keymap: DebugKeymap,
     pub(crate) ext_workspace_state: ExtWorkspaceManagerState,
+    pub(crate) pointer_gestures_state: PointerGesturesState,
+    pub(crate) pointer_constraints_state: PointerConstraintsState,
 }
 
 #[cfg(feature = "smithay_android")]
@@ -339,10 +343,9 @@ impl AndroidSeatRuntime {
                 true
             })
         });
-        log::info!("SmithayRuntime: init stage=pointer_constraints_global");
-        let _pc_global = init_stage("pointer_constraints_global", || {
-            display
-                .create_global::<Self, ZwpPointerConstraintsV1, _>(1, smithay::wayland::GlobalData)
+        log::info!("SmithayRuntime: init stage=pointer_constraints_state");
+        let pointer_constraints_state = init_stage("pointer_constraints_state", || {
+            PointerConstraintsState::new::<Self>(display)
         });
 
         log::info!("SmithayRuntime: init stage=text_input_manager_state");
@@ -361,6 +364,10 @@ impl AndroidSeatRuntime {
         log::info!("SmithayRuntime: init stage=ext_workspace_state");
         let ext_workspace_state = init_stage("ext_workspace_state", || {
             ExtWorkspaceManagerState::new::<Self>(display)
+        });
+        log::info!("SmithayRuntime: init stage=pointer_gestures_state");
+        let pointer_gestures_state = init_stage("pointer_gestures_state", || {
+            PointerGesturesState::new::<Self>(display)
         });
 
         log::info!(
@@ -546,6 +553,8 @@ impl AndroidSeatRuntime {
             trackpad_dragging: false,
             xkb_keymap: DebugKeymap(xkb_keymap),
             ext_workspace_state,
+            pointer_gestures_state,
+            pointer_constraints_state,
         })
     }
 
@@ -629,6 +638,19 @@ impl AndroidSeatRuntime {
     }
 
     pub(crate) fn close_surface(&mut self, surface: WlSurface) {
+        if let Some(window) = self.wl_to_window.get(&surface) {
+            if let Some(x11) = window.x11_surface() {
+                if let Err(e) = x11.close() {
+                    log::error!("XWayland: close_window failed id={}: {:?}", x11.window_id(), e);
+                }
+                log::info!(
+                    "SmithayRuntime: sent close to X11 window {:?} surface {:?}",
+                    x11.window_id(),
+                    surface.id()
+                );
+                return;
+            }
+        }
         if let Some(client) = surface.client() {
             let err = smithay::reexports::wayland_server::backend::protocol::ProtocolError {
                 code: 0,
@@ -647,6 +669,9 @@ impl AndroidSeatRuntime {
     pub(crate) fn toggle_minimize(&mut self, surface: WlSurface) {
         if let Some(pos) = self.minimized.remove(&surface) {
             if let Some(window) = self.wl_to_window.get(&surface) {
+                if let Some(x11) = window.x11_surface() {
+                    let _ = x11.set_hidden(false);
+                }
                 self.space
                     .map_element(WindowElement(window.clone()), pos, false);
             }
@@ -656,6 +681,9 @@ impl AndroidSeatRuntime {
             );
         } else {
             if let Some(window) = self.wl_to_window.get(&surface) {
+                if let Some(x11) = window.x11_surface() {
+                    let _ = x11.set_hidden(true);
+                }
                 if let Some(loc) = self.space.element_location(&WindowElement(window.clone())) {
                     self.minimized.insert(surface.clone(), loc);
                 }
@@ -669,6 +697,9 @@ impl AndroidSeatRuntime {
     pub(crate) fn toggle_maximize(&mut self, surface: WlSurface) {
         if let Some(pos) = self.maximize_restore.remove(&surface) {
             if let Some(window) = self.wl_to_window.get(&surface) {
+                if let Some(x11) = window.x11_surface() {
+                    let _ = x11.set_maximized(false);
+                }
                 self.space
                     .relocate_element(&WindowElement(window.clone()), pos);
             }
@@ -676,6 +707,15 @@ impl AndroidSeatRuntime {
             if let Some(window) = self.wl_to_window.get(&surface) {
                 if let Some(loc) = self.space.element_location(&WindowElement(window.clone())) {
                     self.maximize_restore.insert(surface.clone(), loc);
+                }
+                if let Some(x11) = window.x11_surface() {
+                    let _ = x11.set_maximized(true);
+                    let (w, h) = self.usable_screen_size();
+                    let rect = smithay::utils::Rectangle::new(
+                        (0, self.reserved_top).into(),
+                        (w, h).into(),
+                    );
+                    let _ = x11.configure(rect);
                 }
                 self.space
                     .relocate_element(&WindowElement(window.clone()), (0, self.reserved_top));

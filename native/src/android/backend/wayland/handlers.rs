@@ -247,7 +247,7 @@ impl CompositorHandler for AndroidSeatRuntime {
 
         self.popups.commit(surface);
 
-        let is_x11 = self.wl_to_window.contains_key(surface);
+        let is_x11 = self.wl_to_window.get(surface).and_then(|w| w.x11_surface()).is_some();
         let is_new_unmanaged = if let Some(window) = self.wl_to_window.get(surface) {
             window.on_commit();
             false
@@ -309,16 +309,6 @@ impl CompositorHandler for AndroidSeatRuntime {
                             configure_h = desired.h;
                         }
 
-                        let ez: i32 = cached.exclusive_zone.into();
-                        match cached.layer {
-                            smithay::wayland::shell::wlr_layer::Layer::Top if ez > 0 => {
-                                self.reserved_top = ez; // سيتم إعادة الحساب الكامل بعد commit
-                            }
-                            smithay::wayland::shell::wlr_layer::Layer::Bottom if ez > 0 => {
-                                self.reserved_bottom = ez;
-                            }
-                            _ => {}
-                        }
                     });
 
                     // إعادة حساب المساحة المحجوزة من جميع الطبقات
