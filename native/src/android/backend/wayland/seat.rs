@@ -978,6 +978,14 @@ impl AndroidSeatRuntime {
                                     p[3] = 255;
                                 }
                             }
+                            // WM2: Dim inactive windows by 50%
+                            if self.focused_surface.as_ref().map_or(true, |f| f != wl_surface) {
+                                for p in pixels.chunks_exact_mut(4) {
+                                    p[0] = (p[0] as u16 / 2) as u8;
+                                    p[1] = (p[1] as u16 / 2) as u8;
+                                    p[2] = (p[2] as u16 / 2) as u8;
+                                }
+                            }
                             render_list.push((pixels, loc.x, loc.y, width, height, surface_scale));
                         }
                     }) {
