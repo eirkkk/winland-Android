@@ -4,7 +4,7 @@
 
 Phase | Focus | Issues | Status
 ------|-------|--------|-------
-1 | Safety & Crashes | R1, W1, W3, S1, S2, S4 | Pending
+1 | Safety & Crashes | R1, W1, W3, S1, S2, S4 | **DONE** (commit 5f33e49)
 2 | XWayland Stability | X3, X4, X6, X7, X8, X10 | Pending
 3 | Touch & Gestures | T2, T3, T4, T5, T6, T7 | Pending
 4 | Trackpad | P1, P2, P3, P4, P5, P6 | Pending
@@ -48,11 +48,11 @@ Phase | Focus | Issues | Status
 
 ### X3 — Zombie state on XWayland failure
 **File**: `server.rs:271`
-**Fix**: On `start_wm` failure, clear `x11_wm` and `xwayland_client`, reset socket path, set flag to allow retry.
+**SKIP** — يمس آلية تشغيل XWayland (launch mechanism). التشغيل يدوي من RTF.
 
 ### X4 — Socket race condition
 **File**: `server.rs:245-258`
-**Fix**: Add `X11Wm::ping()` or check socket readiness with `connect()` before looping.
+**SKIP** — يمس socket readiness/launch.
 
 ### X6 — Single xwm_id assumption
 **File**: `x11.rs:55-58`
