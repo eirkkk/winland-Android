@@ -388,11 +388,20 @@ impl AndroidSeatRuntime {
                         let elem = WindowElement(window.clone());
                         if let Some(loc) = self.space.element_location(&elem) {
                             let bbox = elem.bbox();
-                            let rect = smithay::utils::Rectangle::new(
+                            let new_rect = smithay::utils::Rectangle::new(
                                 (loc.x, loc.y).into(),
                                 (bbox.size.w, bbox.size.h).into(),
                             );
-                            let _ = x11.configure(rect);
+                            // WM1: Compare with X11 geometry — if client moved itself,
+                            // skip our configure to avoid fighting the client.
+                            let current = x11.geometry();
+                            if (new_rect.loc.x - current.loc.x).abs() > 2
+                                || (new_rect.loc.y - current.loc.y).abs() > 2
+                                || (new_rect.size.w - current.size.w).abs() > 2
+                                || (new_rect.size.h - current.size.h).abs() > 2
+                            {
+                                let _ = x11.configure(new_rect);
+                            }
                         }
                     }
                 }
