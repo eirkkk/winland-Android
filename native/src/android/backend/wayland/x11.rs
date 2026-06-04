@@ -63,8 +63,12 @@ impl XwmHandler for AndroidSeatRuntime {
         let (sw, sh) = self.usable_screen_size();
         let default_w = (sw as f32 * 0.8) as i32;
         let default_h = (sh as f32 * 0.8) as i32;
-        let fx = (sw - default_w) / 2;
-        let fy = self.reserved_top + 40;
+        let offset_count = self.wl_to_window.len() as i32;
+        let cascade = 30;
+        let base_x = (sw - default_w) / 2;
+        let base_y = self.reserved_top + 40;
+        let fx = base_x + (offset_count % 10) * cascade;
+        let fy = base_y + (offset_count % 10) * cascade;
         let rect = smithay::utils::Rectangle::new(
             (fx.max(0), fy.max(self.reserved_top)).into(),
             (default_w.max(100), default_h.max(100)).into(),
@@ -94,8 +98,12 @@ impl XwmHandler for AndroidSeatRuntime {
                 let (rect, pos) = if geometry.size.w == 0 || geometry.size.h == 0 {
                     let default_w = (sw as f32 * 0.8) as i32;
                     let default_h = (sh as f32 * 0.8) as i32;
-                    let fx = (sw - default_w) / 2;
-                    let fy = self.reserved_top + 40;
+                    let offset_count = self.wl_to_window.len() as i32;
+                    let cascade = 30;
+                    let base_x = (sw - default_w) / 2;
+                    let base_y = self.reserved_top + 40;
+                    let fx = base_x + (offset_count % 10) * cascade;
+                    let fy = base_y + (offset_count % 10) * cascade;
                     let rect = smithay::utils::Rectangle::new(
                         (fx.max(0), fy.max(self.reserved_top)).into(),
                         (default_w.max(100), default_h.max(100)).into(),
@@ -276,12 +284,31 @@ impl XwmHandler for AndroidSeatRuntime {
         _currently_active_window: Option<X11Surface>,
     ) {
         if let Some(wl) = window.wl_surface() {
+            let old_focused = self.focused_surface.clone();
+            if old_focused.as_ref() != Some(&wl) {
+                if let Some(old_surface) = &old_focused {
+                    if let Some(old_w) = self.wl_to_window.get(old_surface) {
+                        old_w.set_activated(false);
+                    }
+                }
+            }
             self.focused_surface = Some(wl.clone());
+            if let Some(x11_window) = self.wl_to_window.get(&wl) {
+                x11_window.set_activated(true);
+            }
             if let Some(keyboard) = self.keyboard.clone() {
                 keyboard.set_focus(self, Some(wl), SERIAL_COUNTER.next_serial());
             }
             log::debug!("XWayland: active_window_request id={}", window.window_id());
         }
+    }
+
+    fn allow_selection_access(
+        &mut self,
+        _xwm: XwmId,
+        _selection: smithay::wayland::selection::SelectionTarget,
+    ) -> bool {
+        true
     }
 
     fn send_selection(
@@ -298,5 +325,69 @@ impl XwmHandler for AndroidSeatRuntime {
                 *guard = text;
             }
         }
+    }
+
+    fn disconnected(&mut self, _xwm: XwmId) {
+        let surfaces: Vec<_> = self.wl_to_window.keys().cloned().collect();
+        for wl in &surfaces {
+            if let Some(x11_window) = self.wl_to_window.remove(wl) {
+                self.space.unmap_elem(&WindowElement(x11_window));
+            }
+            self.minimized.remove(wl);
+            self.maximize_restore.remove(wl);
+            self.unmanaged_surfaces.retain(|s| s != wl);
+        }
+        self.gesture_target = None;
+        self.gesture_surface = None;
+        self.focused_surface = None;
+        log::warn!("XWayland: X11 WM disconnected, cleaned up {} surfaces", surfaces.len());
+    }
+
+    fn property_notify(&mut self, _xwm: XwmId, window: X11Surface, property: smithay::xwayland::xwm::WmWindowProperty) {
+        let _ = (window.clone(), property);
+        log::debug!("XWayland: property_notify id={} property={:?}", window.window_id(), property);
+    }
+
+    fn minimize_request(&mut self, _xwm: XwmId, window: X11Surface) {
+        if let Some(wl) = window.wl_surface() {
+            self.toggle_minimize(wl.clone());
+        }
+    }
+
+    fn unminimize_request(&mut self, _xwm: XwmId, window: X11Surface) {
+        if let Some(wl) = window.wl_surface() {
+            if self.minimized.contains_key(&wl) {
+                self.toggle_minimize(wl.clone());
+            }
+        }
+    }
+
+    fn above_request(&mut self, _xwm: XwmId, window: X11Surface) {
+        if let Some(wl) = window.wl_surface() {
+            if let Some(x11_window) = self.wl_to_window.get(&wl) {
+                let loc = self.space.element_location(&WindowElement(x11_window.clone()));
+                self.space.relocate_element(&WindowElement(x11_window.clone()), loc.unwrap_or_else(|| smithay::utils::Point::from((0, self.reserved_top))));
+            }
+        }
+        log::debug!("XWayland: above_request id={}", window.window_id());
+    }
+
+    fn below_request(&mut self, _xwm: XwmId, window: X11Surface) {
+        if let Some(wl) = window.wl_surface() {
+            if let Some(x11_window) = self.wl_to_window.get(&wl) {
+                if let Some(loc) = self.space.element_location(&WindowElement(x11_window.clone())) {
+                    self.space.relocate_element(&WindowElement(x11_window.clone()), (loc.x, self.reserved_top + 1000));
+                }
+            }
+        }
+        log::debug!("XWayland: below_request id={}", window.window_id());
+    }
+
+    fn ping_acked(&mut self, _xwm: XwmId, window: X11Surface, _timestamp: u32) {
+        log::debug!("XWayland: ping_acked id={}", window.window_id());
+    }
+
+    fn sync_request_timeout(&mut self, _xwm: XwmId, window: X11Surface) {
+        log::warn!("XWayland: sync timeout id={}", window.window_id());
     }
 }

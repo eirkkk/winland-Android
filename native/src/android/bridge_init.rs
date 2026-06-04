@@ -101,7 +101,7 @@ pub unsafe extern "system" fn Java_com_winland_server_NativeBridge_initWaylandCo
         Ok(Err(error)) => {
             set_last_init_error(error.clone());
             log::error!("JNI: {}", error);
-            jboolean::from(true)
+            jboolean::from(false)
         }
         Err(_) => {
             let message = "initWaylandConnection panicked; compositor startup aborted safely".to_string();
