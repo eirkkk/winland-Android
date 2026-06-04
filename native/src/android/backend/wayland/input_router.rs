@@ -1045,6 +1045,7 @@ impl AndroidSeatRuntime {
             RoutedInputEvent::KeyDown { keycode } => {
                 self.ensure_focus_for_non_pointer("key_down");
 
+                // WM7: Alt+Tab / Alt+Shift+Tab — cycle window focus
                 if *keycode == 61 && self.android_modifiers.alt {
                     let dir = if self.android_modifiers.shift { -1 } else { 1 };
                     self.cycle_window_focus(dir);
@@ -1054,6 +1055,28 @@ impl AndroidSeatRuntime {
                         "window_switch alt+shift+tab backward".to_string()
                     };
                     return;
+                }
+
+                // WM7: Alt+F4 — close focused window (Android KEYCODE_F4 = 131)
+                if *keycode == 131 && self.android_modifiers.alt {
+                    if let Some(s) = self.focused_surface.clone() {
+                        self.close_surface(s);
+                    }
+                    self.last_seat_dispatch = "alt+f4 close".to_string();
+                    return;
+                }
+
+                // WM7: Escape — dismiss popup or minimize
+                if *keycode == 111 {
+                    if self.popup_grab_active {
+                        if let Some(ref grab_surface) = self.popup_grab_surface.clone() {
+                            self.dismiss_popup(grab_surface);
+                        }
+                        self.popup_grab_active = false;
+                        self.popup_grab_surface = None;
+                        self.last_seat_dispatch = "escape popup_dismiss".to_string();
+                        return;
+                    }
                 }
 
                 let scancode = super::keymap::android_keycode_to_xkb_scancode(*keycode);
