@@ -13,7 +13,7 @@ use smithay::xwayland::X11Wm;
 #[cfg(feature = "smithay_android")]
 use smithay::xwayland::XwmHandler;
 #[cfg(feature = "smithay_android")]
-use smithay::xwayland::xwm::{XwmId, ResizeEdge, Reorder, X11Surface};
+use smithay::xwayland::xwm::{XwmId, ResizeEdge, Reorder, X11Surface, WmWindowType};
 #[cfg(feature = "smithay_android")]
 use crate::android::backend::wayland::seat::{AndroidSeatRuntime, GestureTarget};
 #[cfg(feature = "smithay_android")]
@@ -89,13 +89,27 @@ impl XwmHandler for AndroidSeatRuntime {
         let wl = window.wl_surface();
         let window_id = window.window_id();
         let _ = window.set_mapped(true);
+        let is_dialog = matches!(window.window_type(), Some(WmWindowType::Dialog));
+        if is_dialog {
+            log::info!("XWayland: map_window_request id={} type=DIALOG — centered", window_id);
+        }
         log::info!("XWayland: map_window_request granted id={}", window_id);
 
         if let Some(wl) = wl {
             if !self.wl_to_window.contains_key(&wl) {
                 let (sw, sh) = self.usable_screen_size();
                 let geometry = window.geometry();
-                let (rect, pos) = if geometry.size.w == 0 || geometry.size.h == 0 {
+                let (rect, pos) = if is_dialog {
+                    let dw = geometry.size.w.max(100).min(sw);
+                    let dh = geometry.size.h.max(100).min(sh);
+                    let fx = (sw - dw) / 2;
+                    let fy = self.reserved_top + ((sh - self.reserved_top - dh) / 2).max(0);
+                    let rect = smithay::utils::Rectangle::new(
+                        (fx.max(0), fy.max(self.reserved_top)).into(),
+                        (dw, dh).into(),
+                    );
+                    (rect, (fx.max(0), fy.max(self.reserved_top)))
+                } else if geometry.size.w == 0 || geometry.size.h == 0 {
                     let default_w = (sw as f32 * 0.8) as i32;
                     let default_h = (sh as f32 * 0.8) as i32;
                     let offset_count = self.wl_to_window.len() as i32;
@@ -198,10 +212,21 @@ impl XwmHandler for AndroidSeatRuntime {
             w.map(|v| v as i32).unwrap_or(default_w),
             h.map(|v| v as i32).unwrap_or(default_h),
         );
-        let (fx, fy) = (
-            x.unwrap_or((sw - fw) / 2),
-            y.unwrap_or(self.reserved_top + 40),
-        );
+
+        // Compositor is authoritative for position of already-mapped windows.
+        // Ignore client-requested x/y; use current compositor position instead.
+        let (fx, fy) = if let Some(wl) = window.wl_surface() {
+            if let Some(x11_window) = self.wl_to_window.get(&wl) {
+                let loc = self.space.element_location(&WindowElement(x11_window.clone()));
+                loc.map(|l| (l.x, l.y))
+                    .unwrap_or((x.unwrap_or((sw - fw) / 2), y.unwrap_or(self.reserved_top + 40)))
+            } else {
+                (x.unwrap_or((sw - fw) / 2), y.unwrap_or(self.reserved_top + 40))
+            }
+        } else {
+            (x.unwrap_or((sw - fw) / 2), y.unwrap_or(self.reserved_top + 40))
+        };
+
         let rect = smithay::utils::Rectangle::new(
             (fx.max(0), fy.max(self.reserved_top)).into(),
             (fw.max(100), fh.max(100)).into(),
