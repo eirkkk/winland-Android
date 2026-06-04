@@ -353,7 +353,7 @@ impl AndroidSeatRuntime {
                     }
                 }
                 self.gesture_origin = (point.x, point.y);
-                self.render_all();
+                self.render_pending = true;
             }
             self.last_seat_dispatch = format!("gesture_move id={} target={:?}", id, target);
             true
@@ -382,9 +382,7 @@ impl AndroidSeatRuntime {
             }
             self.gesture_target = None;
             self.gesture_surface = None;
-            self.active_touch_ids.remove(&id);
-            self.render_all();
-            self.last_seat_dispatch = format!("gesture_touch_up released id={}", id);
+            self.render_pending = true;
             true
         } else {
             false
@@ -1082,6 +1080,11 @@ impl AndroidSeatRuntime {
                 );
             }
             _ => {}
+        }
+
+        if self.render_pending {
+            self.render_pending = false;
+            self.render_all();
         }
 
         engine_timing::emit_hybrid_trace(format!(

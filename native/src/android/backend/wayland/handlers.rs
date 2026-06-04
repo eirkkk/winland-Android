@@ -372,7 +372,7 @@ impl XdgShellHandler for AndroidSeatRuntime {
 
         let (title, app_id) = smithay::wayland::compositor::with_states(&wl_surface, |states| {
             let data = states.data_map.get::<XdgToplevelSurfaceData>();
-            let guard = data.map(|d| d.lock().unwrap());
+            let guard = data.and_then(|d| d.lock().ok());
             let title = guard
                 .as_ref()
                 .and_then(|g| g.title.clone())
@@ -533,7 +533,8 @@ impl XdgShellHandler for AndroidSeatRuntime {
                 states
                     .data_map
                     .get::<XdgToplevelSurfaceData>()
-                    .and_then(|d| d.lock().unwrap().title.clone())
+                    .and_then(|d| d.lock().ok())
+                    .and_then(|g| g.title.clone())
                     .unwrap_or_else(|| "Window".to_string())
             });
             handle.send_title(&title);
@@ -548,7 +549,8 @@ impl XdgShellHandler for AndroidSeatRuntime {
                 states
                     .data_map
                     .get::<XdgToplevelSurfaceData>()
-                    .and_then(|d| d.lock().unwrap().app_id.clone())
+                    .and_then(|d| d.lock().ok())
+                    .and_then(|g| g.app_id.clone())
                     .unwrap_or_else(|| "unknown".to_string())
             });
             handle.send_app_id(&app_id);
