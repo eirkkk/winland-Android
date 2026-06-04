@@ -1,5 +1,7 @@
 use crate::android::backend::wayland::engine_timing;
 #[cfg(feature = "smithay_android")]
+use crate::android::backend::wayland::input_router::is_xwayland_surface;
+#[cfg(feature = "smithay_android")]
 #[allow(unused_imports)]
 use smithay::desktop::space::SpaceElement;
 #[cfg(feature = "smithay_android")]
@@ -949,6 +951,11 @@ impl AndroidSeatRuntime {
                         }
 
                         if !pixels.is_empty() {
+                            if is_xwayland_surface(wl_surface) {
+                                for p in pixels.chunks_exact_mut(4) {
+                                    p[3] = 255;
+                                }
+                            }
                             render_list.push((pixels, loc.x, loc.y, width, height, surface_scale));
                         }
                     }) {
@@ -1072,9 +1079,17 @@ impl AndroidSeatRuntime {
         }
 
         // ── Cursor overlay ──
+        // When focused on an XWayland surface, XWayland renders its own cursor
+        // embedded in the surface buffer. Skip the Wayland software cursor to
+        // avoid a double-cursor artifact (Wayland cursor + XWayland cursor).
         let cursor_pos = self.pointer.current_location();
-
-        if let Some(ref cursor_status) = self.cursor_status {
+        let cursor_visible = self.focused_surface.as_ref()
+            .map_or(true, |s| !is_xwayland_surface(s));
+        if !cursor_visible {
+            if log_this {
+                log::info!("  cursor: hidden (XWayland focus)");
+            }
+        } else if let Some(ref cursor_status) = self.cursor_status {
             match cursor_status {
                 CursorImageStatus::Hidden => {}
                 CursorImageStatus::Named(_) => {

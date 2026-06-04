@@ -32,7 +32,7 @@ use smithay::wayland::compositor;
 use smithay::wayland::xwayland_shell::XWAYLAND_SHELL_ROLE;
 
 #[cfg(feature = "smithay_android")]
-fn is_xwayland_surface(surface: &WlSurface) -> bool {
+pub(crate) fn is_xwayland_surface(surface: &WlSurface) -> bool {
     compositor::get_role(surface) == Some(XWAYLAND_SHELL_ROLE)
 }
 
@@ -196,7 +196,7 @@ impl AndroidSeatRuntime {
         }
     }
 
-    fn dispatch_touch_down(&mut self, id: i32, point: &TouchPoint) {
+    fn dispatch_touch_down(&mut self, id: i32, point: &TouchPoint, fallback_focus: Option<WlSurface>) {
         // Popup dismissal
         if self.popup_grab_active {
             let outside = if let Some(ref _grab_surface) = self.popup_grab_surface {
@@ -217,7 +217,8 @@ impl AndroidSeatRuntime {
 
         // Gesture detection: titlebar buttons, window edges, drag
         if self.gesture_target.is_none() {
-            if let Some(ref focus) = self.focused_surface.clone() {
+            let detection_focus = self.focused_surface.clone().or(fallback_focus);
+            if let Some(ref focus) = detection_focus {
                 if let Some(window) = self.wl_to_window.get(focus) {
                     let elem = WindowElement(window.clone());
                     if let Some(loc) = self.space.element_location(&elem) {
@@ -301,7 +302,9 @@ impl AndroidSeatRuntime {
                     match target {
                         GestureTarget::Move => {
                             if let Some(loc) = self.space.element_location(&elem) {
-                                self.space.relocate_element(&elem, (loc.x + dx, loc.y + dy));
+                                let nx = loc.x + dx;
+                                let ny = loc.y + dy;
+                                self.space.relocate_element(&elem, (nx, ny));
                             }
                         }
                         GestureTarget::Resize(edge) => {
@@ -345,9 +348,6 @@ impl AndroidSeatRuntime {
                             if let Some(xdg_toplevel) = window.toplevel() {
                                 xdg_toplevel.with_pending_state(|state| state.size = Some((nw, nh).into()));
                                 xdg_toplevel.send_configure();
-                            } else if let Some(x11) = window.x11_surface() {
-                                let rect = smithay::utils::Rectangle::new((nx, ny).into(), (nw.max(100), nh.max(100)).into());
-                                let _ = x11.configure(rect);
                             }
                         }
                     }
@@ -364,6 +364,22 @@ impl AndroidSeatRuntime {
 
     fn dispatch_touch_up_gesture(&mut self, id: i32) -> bool {
         if self.gesture_target.is_some() {
+            // Finalize X11 window position/size after drag completes
+            if let Some(ref surface) = self.gesture_surface {
+                if let Some(window) = self.wl_to_window.get(surface) {
+                    if let Some(x11) = window.x11_surface() {
+                        let elem = WindowElement(window.clone());
+                        if let Some(loc) = self.space.element_location(&elem) {
+                            let bbox = elem.bbox();
+                            let rect = smithay::utils::Rectangle::new(
+                                (loc.x, loc.y).into(),
+                                (bbox.size.w, bbox.size.h).into(),
+                            );
+                            let _ = x11.configure(rect);
+                        }
+                    }
+                }
+            }
             self.gesture_target = None;
             self.gesture_surface = None;
             self.active_touch_ids.remove(&id);
@@ -833,7 +849,7 @@ impl AndroidSeatRuntime {
             WinlandInputMode::Touch => {
                 match event {
                     RoutedInputEvent::TouchDown { id, point } => {
-                        self.dispatch_touch_down(*id, point);
+                        self.dispatch_touch_down(*id, point, focus.clone());
                         if self.gesture_target.is_some() || self.last_seat_dispatch.contains("_btn ") {
                             return;
                         }
