@@ -728,6 +728,10 @@ impl AndroidSeatRuntime {
         self.active_touch_ids.insert(id);
         if self.active_touch_ids.len() == 1 {
             self.touch_finger1_down_ms = now;
+            self.touch_longpress_armed = true;
+        }
+        if self.active_touch_ids.len() >= 2 {
+            self.touch_longpress_armed = false;
         }
         if self.active_touch_ids.len() >= 3 {
             self.swipe_cycle_armed = true;
@@ -751,6 +755,16 @@ impl AndroidSeatRuntime {
             time: move_time,
         });
         touch.frame(self);
+        // T7: Disarm long-press on significant movement
+        if self.touch_longpress_armed {
+            if let Some(entry) = self.swipe_starts.get(&id) {
+                let dx = (point.x - entry.0).abs();
+                let dy = (point.y - entry.1).abs();
+                if dx > 15.0 || dy > 15.0 {
+                    self.touch_longpress_armed = false;
+                }
+            }
+        }
         engine_timing::emit_hybrid_trace(format!(
             "TouchOnly touch_move id={} x={:.1} y={:.1}", id, point.x, point.y
         ));
@@ -788,6 +802,26 @@ impl AndroidSeatRuntime {
             self.last_seat_dispatch = format!("two_finger_right_click id={}", id);
             return;
         }
+
+        // T7: Long-press right-click — single finger held >500ms
+        if self.touch_longpress_armed && self.active_touch_ids.len() <= 1 {
+            self.touch_longpress_armed = false;
+            let hold_ms = now.wrapping_sub(self.touch_finger1_down_ms);
+            if hold_ms >= 500 {
+                let p = self.pointer.clone();
+                let cfocus: Option<(WlSurface, Point<f64, Logical>)> =
+                    self.focused_surface.as_ref().map(|s| (s.clone(), (0.0, 0.0).into()));
+                let click_time = now;
+                p.button(self, &ButtonEvent { serial: SERIAL_COUNTER.next_serial(), time: click_time, button: 0x111, state: ButtonState::Pressed });
+                p.frame(self);
+                p.button(self, &ButtonEvent { serial: SERIAL_COUNTER.next_serial(), time: click_time, button: 0x111, state: ButtonState::Released });
+                p.frame(self);
+                self.active_touch_ids.clear();
+                self.last_seat_dispatch = format!("long_press_right_click id={} hold={}ms", id, hold_ms);
+                return;
+            }
+        }
+        self.touch_longpress_armed = false;
 
         let touch = self.touch.clone();
         let up_time = now;
