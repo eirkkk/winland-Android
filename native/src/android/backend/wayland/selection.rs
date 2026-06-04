@@ -52,8 +52,7 @@ impl SelectionHandler for AndroidSeatRuntime {
         let clipboard = self.clipboard_text.clone();
         std::thread::spawn(move || {
             use std::io::Read;
-            use std::os::fd::{FromRawFd, IntoRawFd};
-            let mut file = unsafe { std::fs::File::from_raw_fd(read_fd.into_raw_fd()) };
+            let mut file = std::fs::File::from(read_fd);
             let mut buf = String::new();
             if file.read_to_string(&mut buf).is_ok() {
                 let text = buf.trim_end_matches('\0').to_string();
@@ -92,17 +91,14 @@ impl SelectionHandler for AndroidSeatRuntime {
         _seat: Seat<Self>,
         user_data: &Self::SelectionUserData,
     ) {
-use std::os::fd::{FromRawFd, IntoRawFd};
-
         if ty != SelectionTarget::Clipboard && ty != SelectionTarget::Primary {
             return;
         }
 
         if mime_type.starts_with("text/plain") || mime_type == "UTF8_STRING" || mime_type == "STRING" || mime_type == "TEXT" {
             let text = user_data.clone();
-            let raw_fd = fd.into_raw_fd();
             std::thread::spawn(move || {
-                let mut file = unsafe { std::fs::File::from_raw_fd(raw_fd) };
+                let mut file = std::fs::File::from(fd);
                 let _ = file.write_all(text.as_bytes());
             });
         }

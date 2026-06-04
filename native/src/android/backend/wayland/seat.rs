@@ -233,6 +233,7 @@ pub struct AndroidSeatRuntime {
     pub(crate) gesture_target: Option<GestureTarget>,
     pub(crate) gesture_surface: Option<WlSurface>,
     pub(crate) gesture_origin: (f32, f32),
+    pub(crate) render_pending: bool,
     pub(crate) relative_sensitivity: f32,
     pub(crate) physical_size: (i32, i32),
     pub(crate) screen_size: (i32, i32),
@@ -530,6 +531,7 @@ impl AndroidSeatRuntime {
             gesture_origin: (0.0, 0.0),
             popup_grab_active: false,
             popup_grab_surface: None,
+            render_pending: false,
             relative_sensitivity: 1.0,
             physical_size: crate::android::command_channel::get_physical_size(),
             screen_size: (width, height),
@@ -914,12 +916,24 @@ impl AndroidSeatRuntime {
                         continue;
                     }
                     match with_buffer_contents(&buffer, |ptr, len, info| {
-                        let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
                         let width = info.width as i32;
                         let height = info.height as i32;
                         let stride = info.stride as usize;
                         let offset = info.offset as usize;
                         let fmt = format!("{:?}", info.format);
+
+                        let total_needed = offset.checked_add(height as usize * stride)
+                            .unwrap_or(usize::MAX);
+                        if total_needed > len {
+                            if log_this {
+                                log::warn!(
+                                    "  space[{}]: buffer size {} < needed {} (off={} stride={} h={})",
+                                    idx, len, total_needed, offset, stride, height
+                                );
+                            }
+                            return;
+                        }
+                        let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
 
                         let mut pixels = Vec::with_capacity((width * height * 4) as usize);
                         for y in 0..height {
@@ -985,11 +999,23 @@ impl AndroidSeatRuntime {
                             continue;
                         }
                         let _ = with_buffer_contents(&buffer, |ptr, len, info| {
-                            let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
                             let width = info.width as i32;
                             let height = info.height as i32;
                             let stride = info.stride as usize;
                             let offset = info.offset as usize;
+
+                            let total_needed = offset.checked_add(height as usize * stride)
+                                .unwrap_or(usize::MAX);
+                            if total_needed > len {
+                                if log_this {
+                                    log::warn!(
+                                        "  popup: buffer size {} < needed {} (off={} stride={} h={})",
+                                        len, total_needed, offset, stride, height
+                                    );
+                                }
+                                return;
+                            }
+                            let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
 
                             let mut pixels = Vec::with_capacity((width * height * 4) as usize);
                             for y in 0..height {
@@ -1026,12 +1052,24 @@ impl AndroidSeatRuntime {
                     continue;
                 }
                 match with_buffer_contents(&buffer, |ptr, len, info| {
-                    let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
                     let width = info.width as i32;
                     let height = info.height as i32;
                     let stride = info.stride as usize;
                     let offset = info.offset as usize;
                     let fmt = format!("{:?}", info.format);
+
+                    let total_needed = offset.checked_add(height as usize * stride)
+                        .unwrap_or(usize::MAX);
+                    if total_needed > len {
+                        if log_this {
+                            log::warn!(
+                                "  unmanaged[{}]: buffer size {} < needed {} (off={} stride={} h={})",
+                                idx, len, total_needed, offset, stride, height
+                            );
+                        }
+                        return;
+                    }
+                    let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
 
                     let mut pixels = Vec::with_capacity((width * height * 4) as usize);
                     for y in 0..height {
