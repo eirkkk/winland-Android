@@ -49,7 +49,7 @@ pub fn spawn() -> Result<(), String> {
     let thread_running = Arc::clone(&running);
     let thread_socket_dir = socket_dir.clone();
     let (startup_tx, startup_rx) = mpsc::channel::<Result<(), String>>();
-    let (render_tx, render_rx) = crossbeam_channel::bounded::<Vec<RenderItem>>(4);
+    let (render_tx, render_rx) = crossbeam_channel::unbounded::<Vec<RenderItem>>();
 
     let worker = thread::spawn(move || {
         let mut wayland_server = match crate::android::backend::wayland::smithay_runtime::WaylandServer::bind(

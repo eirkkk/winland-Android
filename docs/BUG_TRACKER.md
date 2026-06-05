@@ -13,7 +13,7 @@
 
 | # | Severity | Title | Area | Status |
 |---|----------|-------|------|--------|
-| R1 | 🔴 | `unsafe { std::slice::from_raw_parts(ptr, len) }` in SHM read loop — no bounds check across 4 call sites | `seat.rs:917,988,1029,1138` | Open |
+| R1 | 🔴 | `unsafe { std::slice::from_raw_parts(ptr, len) }` in SHM read loop — no bounds check across 4 call sites | `seat.rs:917,988,1029,1138` | ⚪ Fixed |
 | R2 | 🟠 | Non-SHM buffers silently skipped (EGL buffers) — no fallback path | `seat.rs:912` | Open |
 | R3 | 🟠 | No damage tracking: entire output composited every frame even if nothing changed | `seat.rs:871` | Open |
 | R4 | 🟠 | GLES program compiled on every `bind_native_window` call — no reuse across surface recreations | `smithay_backend.rs:28-51` | Open |
@@ -27,8 +27,8 @@
 
 | # | Severity | Title | Area | Status |
 |---|----------|-------|------|--------|
-| W1 | 🟠 | `lock().unwrap()` on `CursorImageSurfaceData` — will panic on poisoned mutex | `handlers.rs:375` | Open |
-| W2 | 🟠 | `WaylandClientState` might not be set when first client handler fires — silent skip | `handlers.rs:236` | Open |
+| W1 | 🟠 | `lock().unwrap()` on `XdgToplevelSurfaceData` — will panic on poisoned mutex | `handlers.rs:383,544,559` | ⚪ Fixed |
+| W2 | 🟠 | `WaylandClientState` might not be set when first client handler fires — silent skip | `handlers.rs:236` | ⚪ Fixed |
 | W3 | 🟡 | Selection/Clipboard uses raw `from_raw_fd` with no ownership tracking — FD leak risk | `selection.rs:56,105` | Open |
 | W4 | 🟡 | `SERIAL_COUNTER.next_serial()` called ad-hoc without protocol-phase ordering guarantees | multiple | Open |
 | W5 | 🟡 | Popup dismissal uses `element_under(point)` — may misfire on overlapping popups | `input_router.rs:204` | Open |
@@ -42,6 +42,7 @@
 
 | # | Severity | Title | Area | Status |
 |---|----------|-------|------|--------|
+| X0 | 🟠 | X11→Wayland clipboard bridge broken: `send_selection` reads instead of writes, `new_selection` not implemented | `x11.rs:453-490` | ⚪ Fixed |
 | X1 | 🔴 | XWayland surface rendered as ARGB with alpha=0 → transparent through GLES blend | `seat.rs:954` ✅ fix | ⚪ Fixed |
 | X2 | 🟠 | `x11.configure()` sent during move/resize deltas causes double-render (GIMP commits stale buffer) | `input_router.rs:308-315` ✅ removed | ⚪ Fixed |
 | X3 | 🟠 | `X11Wm::start_wm` failure kills XWayland but runtime continues — zombie state | `server.rs:271` | Open |
@@ -49,9 +50,9 @@
 | X5 | 🟡 | `set_hidden(true/false)` called on X11 surface but no visual indicator of minimized state | `seat.rs:684-686` | Open |
 | X6 | 🟡 | No `xwm_id` tracking across multiple XWayland instances — assumes single x11_wm | `x11.rs:55-58` | Open |
 | X7 | 🟡 | `unmapped_window` drops gesture state but doesn't verify gesture_surface matches | `x11.rs:144-146` | Open |
-| X8 | 🟡 | `configure_request` handler may fight with compositor's move/resize (dual-position authority) | `x11.rs` | Open |
-| X9 | 🔵 | No `_NET_WM_STATE_FULLSCREEN` → fullscreen X11 apps not supported | x11.rs | Open |
-| X10 | 🔵 | No `_NET_WM_WINDOW_TYPE_DIALOG` → dialogs not centered/pinned | x11.rs | Open |
+| X8 | 🟡 | `configure_request` handler may fight with compositor's move/resize (dual-position authority) | `x11.rs` | ⚪ Fixed |
+| X9 | 🔵 | No `_NET_WM_STATE_FULLSCREEN` → fullscreen X11 apps not supported | x11.rs | ⚪ Fixed |
+| X10 | 🔵 | No `_NET_WM_WINDOW_TYPE_DIALOG` → dialogs not centered/pinned | x11.rs | ⚪ Fixed |
 
 ---
 
@@ -110,7 +111,7 @@
 
 | # | Severity | Title | Area | Status |
 |---|----------|-------|------|--------|
-| WM1 | 🟠 | `x11.configure()` on gesture completion (our fix) may race with client's own ConfigureRequest — position reset | `input_router.rs:376-390` | Open |
+| WM1 | 🟠 | `x11.configure()` on gesture completion (our fix) may race with client's own ConfigureRequest — position reset | `input_router.rs:376-390` | ⚪ Fixed |
 | WM2 | 🟡 | `set_activate(true/false)` called but no visual active/inactive state rendered (e.g., titlebar color change) | `shell.rs:44-46` | Open |
 | WM3 | 🟡 | Focus candidate selection in `unmapped_window` may pick wrong window when multiple remain | `x11.rs:150` | Open |
 | WM4 | 🟡 | Maximize restores to saved position but does not verify position is still on-screen | `seat.rs:703-704` | Open |

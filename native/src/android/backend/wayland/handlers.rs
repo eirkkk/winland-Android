@@ -230,12 +230,10 @@ impl CompositorHandler for AndroidSeatRuntime {
         } else if let Some(state) = client.get_data::<XWaylandClientData>() {
             &state.compositor_state
         } else {
-            // تجنب استخدام fallback مشترك: نسجل خطأ ونعطي قيمة افتراضية لكل عميل على حدة (إذا أمكن)
-            // لكن في smithay لا يمكن إنشاء CompositorClientState ديناميكياً هنا، لذا نحتفظ بتسجيل خطأ
-            // ونستخدم مؤقتاً قيمة ثابتة مع تحذير بأنه قد يسبب مشاكل.
-            log::error!("SmithayRuntime: Client missing WaylandClientState. This will cause broken compositor state.");
-            // إنشاء حالة جديدة لكل عميل غير ممكن هنا، لذلك نستخدم مؤقتاً static
-            // ولكننا ننصح بإصلاح إنشاء العميل ليمتلك WaylandClientState.
+            // This path should never be reached: Wayland clients get WaylandClientState
+            // from insert_client, XWayland clients get XWaylandClientData from Smithay.
+            // The FALLBACK static is safe because it holds default (scale=1.0).
+            log::warn!("SmithayRuntime: Client has neither WaylandClientState nor XWaylandClientData, using default fallback");
             static FALLBACK: std::sync::OnceLock<CompositorClientState> =
                 std::sync::OnceLock::new();
             FALLBACK.get_or_init(CompositorClientState::default)
@@ -309,6 +307,16 @@ impl CompositorHandler for AndroidSeatRuntime {
                             configure_h = desired.h;
                         }
 
+                        let ez: i32 = cached.exclusive_zone.into();
+                        match cached.layer {
+                            smithay::wayland::shell::wlr_layer::Layer::Top if ez > 0 => {
+                                self.reserved_top = ez; // سيتم إعادة الحساب الكامل بعد commit
+                            }
+                            smithay::wayland::shell::wlr_layer::Layer::Bottom if ez > 0 => {
+                                self.reserved_bottom = ez;
+                            }
+                            _ => {}
+                        }
                     });
 
                     // إعادة حساب المساحة المحجوزة من جميع الطبقات

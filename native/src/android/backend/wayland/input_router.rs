@@ -32,7 +32,7 @@ use smithay::wayland::compositor;
 use smithay::wayland::xwayland_shell::XWAYLAND_SHELL_ROLE;
 
 #[cfg(feature = "smithay_android")]
-pub(crate) fn is_xwayland_surface(surface: &WlSurface) -> bool {
+fn is_xwayland_surface(surface: &WlSurface) -> bool {
     compositor::get_role(surface) == Some(XWAYLAND_SHELL_ROLE)
 }
 
@@ -78,19 +78,6 @@ impl AndroidSeatRuntime {
     }
 
     pub(crate) fn choose_focus_candidate(&self) -> Option<WlSurface> {
-        let managed: std::collections::HashSet<WlSurface> = self.space
-            .elements()
-            .filter_map(|elem| elem.0.wl_surface().map(|s| s.as_ref().clone()))
-            .collect();
-
-        // Try MRU order first: most recently focused, alive, and in the space
-        for s in self.mru_list.iter().rev() {
-            if s.is_alive() && managed.contains(s) {
-                return Some(s.clone());
-            }
-        }
-
-        // Fallback to topmost in stacking order
         self.space
             .elements()
             .rev()
@@ -144,10 +131,6 @@ impl AndroidSeatRuntime {
         }
 
         self.focused_surface = Some(target.clone());
-
-        // Record in MRU list
-        self.mru_list.retain(|s| s != &target);
-        self.mru_list.push(target.clone());
 
         if let Some(window) = self.wl_to_window.get(&target) {
             window.set_activated(true);
@@ -213,7 +196,8 @@ impl AndroidSeatRuntime {
         }
     }
 
-    fn dispatch_touch_down(&mut self, id: i32, point: &TouchPoint, fallback_focus: Option<WlSurface>) {
+    fn dispatch_touch_down(&mut self, id: i32, point: &TouchPoint) {
+        self.pending_compositor_move = false;
         // Popup dismissal
         if self.popup_grab_active {
             let outside = if let Some(ref _grab_surface) = self.popup_grab_surface {
@@ -234,8 +218,7 @@ impl AndroidSeatRuntime {
 
         // Gesture detection: titlebar buttons, window edges, drag
         if self.gesture_target.is_none() {
-            let detection_focus = self.focused_surface.clone().or(fallback_focus);
-            if let Some(ref focus) = detection_focus {
+            if let Some(ref focus) = self.focused_surface.clone() {
                 if let Some(window) = self.wl_to_window.get(focus) {
                     let elem = WindowElement(window.clone());
                     if let Some(loc) = self.space.element_location(&elem) {
@@ -319,9 +302,7 @@ impl AndroidSeatRuntime {
                     match target {
                         GestureTarget::Move => {
                             if let Some(loc) = self.space.element_location(&elem) {
-                                let nx = loc.x + dx;
-                                let ny = loc.y + dy;
-                                self.space.relocate_element(&elem, (nx, ny));
+                                self.space.relocate_element(&elem, (loc.x + dx, loc.y + dy));
                             }
                         }
                         GestureTarget::Resize(edge) => {
@@ -365,12 +346,22 @@ impl AndroidSeatRuntime {
                             if let Some(xdg_toplevel) = window.toplevel() {
                                 xdg_toplevel.with_pending_state(|state| state.size = Some((nw, nh).into()));
                                 xdg_toplevel.send_configure();
+                            } else if let Some(x11) = window.x11_surface() {
+                                let rect = smithay::utils::Rectangle::new(
+                                    (nx, ny).into(),
+                                    (nw.max(100), nh.max(100)).into(),
+                                );
+                                if x11.sync_request_supported() {
+                                    let _ = x11.configure_with_sync(rect, None);
+                                } else {
+                                    let _ = x11.configure(rect);
+                                }
                             }
                         }
                     }
                 }
                 self.gesture_origin = (point.x, point.y);
-                self.render_pending = true;
+                self.render_all();
             }
             self.last_seat_dispatch = format!("gesture_move id={} target={:?}", id, target);
             true
@@ -381,34 +372,12 @@ impl AndroidSeatRuntime {
 
     fn dispatch_touch_up_gesture(&mut self, id: i32) -> bool {
         if self.gesture_target.is_some() {
-            // Finalize X11 window position/size after drag completes
-            if let Some(ref surface) = self.gesture_surface {
-                if let Some(window) = self.wl_to_window.get(surface) {
-                    if let Some(x11) = window.x11_surface() {
-                        let elem = WindowElement(window.clone());
-                        if let Some(loc) = self.space.element_location(&elem) {
-                            let bbox = elem.bbox();
-                            let new_rect = smithay::utils::Rectangle::new(
-                                (loc.x, loc.y).into(),
-                                (bbox.size.w, bbox.size.h).into(),
-                            );
-                            // WM1: Compare with X11 geometry — if client moved itself,
-                            // skip our configure to avoid fighting the client.
-                            let current = x11.geometry();
-                            if (new_rect.loc.x - current.loc.x).abs() > 2
-                                || (new_rect.loc.y - current.loc.y).abs() > 2
-                                || (new_rect.size.w - current.size.w).abs() > 2
-                                || (new_rect.size.h - current.size.h).abs() > 2
-                            {
-                                let _ = x11.configure(new_rect);
-                            }
-                        }
-                    }
-                }
-            }
+            self.pending_compositor_move = true;
             self.gesture_target = None;
             self.gesture_surface = None;
-            self.render_pending = true;
+            self.active_touch_ids.remove(&id);
+            self.render_all();
+            self.last_seat_dispatch = format!("gesture_touch_up released id={}", id);
             true
         } else {
             false
@@ -442,26 +411,12 @@ impl AndroidSeatRuntime {
         let raw_dy = point.y - last_y;
         self.trackpad_anchor = Some((point.x, point.y));
 
-        // P3: Lowered noise gate from 0.5 to 0.1 for smoother fine motion
-        if raw_dx.abs() < 0.1 && raw_dy.abs() < 0.1 {
+        if raw_dx.abs() < 0.5 && raw_dy.abs() < 0.5 {
             return;
         }
 
         self.trackpad_moved = true;
         let p = self.pointer.clone();
-
-        // P6: Two-finger scroll — if 2+ fingers active, emit scroll instead of pointer motion
-        if self.active_touch_ids.len() >= 2 {
-            let sensitivity = crate::android::command_channel::get_scroll_sensitivity() as f64;
-            let axis = AxisFrame::new(engine_timing::now_ms_u32())
-                .source(AxisSource::Finger)
-                .value(Axis::Horizontal, -(raw_dx as f64) * sensitivity)
-                .value(Axis::Vertical, -(raw_dy as f64) * sensitivity);
-            p.axis(self, axis);
-            p.frame(self);
-            self.last_seat_dispatch = format!("trackpad_scroll id={} dx={:.1} dy={:.1}", id, raw_dx, raw_dy);
-            return;
-        }
 
         // Long-press detection: if finger held still > 350ms, enter drag mode.
         // Drag mode keeps left button pressed so subsequent motion acts as
@@ -483,11 +438,11 @@ impl AndroidSeatRuntime {
             }
         }
 
-        // P5: Apply sensitivity and logarithmic acceleration curve.
-        // Base multiplier 1.5x, acceleration uses ln(1 + speed) * 0.6 for
-        // smooth ramp-up: gentle at low speeds, responsive at high speeds.
+        // Apply sensitivity and acceleration.
+        // Reduced base sensitivity for precise control.
+        // Base multiplier 1.5x, acceleration adds up to 3x for fast swipes.
         let speed = (raw_dx * raw_dx + raw_dy * raw_dy).sqrt();
-        let accel = 1.0 + (speed * 0.02).ln_1p() * 0.6;
+        let accel = 1.0 + (speed / 150.0).min(2.0);
         let s = self.relative_sensitivity;
         let dx = raw_dx * 1.5 * accel * s;
         let dy = raw_dy * 1.5 * accel * s;
@@ -685,31 +640,6 @@ impl AndroidSeatRuntime {
     }
 
     fn handle_touch_down(&mut self, id: i32, point: &TouchPoint, focus: &Option<WlSurface>) {
-        let now = engine_timing::now_ms_u32();
-
-        // T6: Two-finger tap → right-click
-        // If second finger arrives within 300ms of first, cancel first finger's touch
-        // and emit right-click immediately.
-        if self.active_touch_ids.len() == 1
-            && self.touch_finger1_down_ms > 0
-            && now.wrapping_sub(self.touch_finger1_down_ms) < 300
-        {
-            let t = self.touch.clone();
-            let first_id = *self.active_touch_ids.iter().next().unwrap();
-            t.up(self, &UpEvent {
-                slot: engine_timing::touch_slot_from_id(first_id),
-                serial: SERIAL_COUNTER.next_serial(),
-                time: now,
-            });
-            t.frame(self);
-            self.active_touch_ids.clear();
-            self.active_touch_ids.insert(id);
-            self.touch_finger1_down_ms = 0;
-            self.touch_rightclick_armed = true;
-            self.last_seat_dispatch = format!("two_finger_tap_armed id={}", id);
-            return;
-        }
-
         let touch = self.touch.clone();
         let location = engine_timing::point_from_xy(point.x, point.y);
         let surface_origin: Point<f64, Logical> = focus.as_ref()
@@ -723,11 +653,12 @@ impl AndroidSeatRuntime {
                 .find(|s| s.is_alive()))
             .as_ref()
             .map(|s| (s.clone(), surface_origin));
+        let down_time = engine_timing::now_ms_u32();
         touch.down(self, touch_focus, &DownEvent {
             slot: engine_timing::touch_slot_from_id(id),
             location,
             serial: SERIAL_COUNTER.next_serial(),
-            time: now,
+            time: down_time,
         });
         touch.frame(self);
         engine_timing::emit_hybrid_trace(format!(
@@ -735,13 +666,6 @@ impl AndroidSeatRuntime {
         ));
         self.last_seat_dispatch = format!("touch_down id={} x={:.0} y={:.0}", id, point.x, point.y);
         self.active_touch_ids.insert(id);
-        if self.active_touch_ids.len() == 1 {
-            self.touch_finger1_down_ms = now;
-            self.touch_longpress_armed = true;
-        }
-        if self.active_touch_ids.len() >= 2 {
-            self.touch_longpress_armed = false;
-        }
         if self.active_touch_ids.len() >= 3 {
             self.swipe_cycle_armed = true;
         }
@@ -764,16 +688,6 @@ impl AndroidSeatRuntime {
             time: move_time,
         });
         touch.frame(self);
-        // T7: Disarm long-press on significant movement
-        if self.touch_longpress_armed {
-            if let Some(entry) = self.swipe_starts.get(&id) {
-                let dx = (point.x - entry.0).abs();
-                let dy = (point.y - entry.1).abs();
-                if dx > 15.0 || dy > 15.0 {
-                    self.touch_longpress_armed = false;
-                }
-            }
-        }
         engine_timing::emit_hybrid_trace(format!(
             "TouchOnly touch_move id={} x={:.1} y={:.1}", id, point.x, point.y
         ));
@@ -785,55 +699,8 @@ impl AndroidSeatRuntime {
     }
 
     fn handle_touch_up(&mut self, id: i32) {
-        let now = engine_timing::now_ms_u32();
-
-        // T6: Two-finger tap → emit right-click instead of normal touch up
-        if self.touch_rightclick_armed {
-            self.touch_rightclick_armed = false;
-            let p = self.pointer.clone();
-            let cfocus: Option<(WlSurface, Point<f64, Logical>)> =
-                self.focused_surface.as_ref().map(|s| (s.clone(), (0.0, 0.0).into()));
-            p.button(self, &ButtonEvent {
-                serial: SERIAL_COUNTER.next_serial(),
-                time: now,
-                button: 0x111,
-                state: ButtonState::Pressed,
-            });
-            p.frame(self);
-            p.button(self, &ButtonEvent {
-                serial: SERIAL_COUNTER.next_serial(),
-                time: now,
-                button: 0x111,
-                state: ButtonState::Released,
-            });
-            p.frame(self);
-            self.active_touch_ids.clear();
-            self.last_seat_dispatch = format!("two_finger_right_click id={}", id);
-            return;
-        }
-
-        // T7: Long-press right-click — single finger held >500ms
-        if self.touch_longpress_armed && self.active_touch_ids.len() <= 1 {
-            self.touch_longpress_armed = false;
-            let hold_ms = now.wrapping_sub(self.touch_finger1_down_ms);
-            if hold_ms >= 500 {
-                let p = self.pointer.clone();
-                let cfocus: Option<(WlSurface, Point<f64, Logical>)> =
-                    self.focused_surface.as_ref().map(|s| (s.clone(), (0.0, 0.0).into()));
-                let click_time = now;
-                p.button(self, &ButtonEvent { serial: SERIAL_COUNTER.next_serial(), time: click_time, button: 0x111, state: ButtonState::Pressed });
-                p.frame(self);
-                p.button(self, &ButtonEvent { serial: SERIAL_COUNTER.next_serial(), time: click_time, button: 0x111, state: ButtonState::Released });
-                p.frame(self);
-                self.active_touch_ids.clear();
-                self.last_seat_dispatch = format!("long_press_right_click id={} hold={}ms", id, hold_ms);
-                return;
-            }
-        }
-        self.touch_longpress_armed = false;
-
         let touch = self.touch.clone();
-        let up_time = now;
+        let up_time = engine_timing::now_ms_u32();
         touch.up(self, &UpEvent {
             slot: engine_timing::touch_slot_from_id(id),
             serial: SERIAL_COUNTER.next_serial(),
@@ -849,6 +716,7 @@ impl AndroidSeatRuntime {
             let (screen_w, screen_h) = self.usable_screen_size();
             let dx = last_x - start_x;
             let dy = last_y - start_y;
+            let now = engine_timing::now_ms_u32();
             let cooldown_ready = self.last_window_cycle_ms == 0
                 || now.wrapping_sub(self.last_window_cycle_ms) >= self.window_cycle_cooldown_ms;
             if self.swipe_cycle_armed && cooldown_ready
@@ -974,15 +842,14 @@ impl AndroidSeatRuntime {
             WinlandInputMode::Touch => {
                 match event {
                     RoutedInputEvent::TouchDown { id, point } => {
-                        self.dispatch_touch_down(*id, point, focus.clone());
+                        self.dispatch_touch_down(*id, point);
                         if self.gesture_target.is_some() || self.last_seat_dispatch.contains("_btn ") {
                             return;
                         }
                         if is_xwayland {
                             self.handle_absolute_pointer_down(*id, point);
-                        } else {
-                            self.handle_touch_down(*id, point, &focus);
                         }
+                        self.handle_touch_down(*id, point, &focus);
                     }
                     RoutedInputEvent::TouchMove { id, point } => {
                         if self.dispatch_touch_move_gesture(*id, point) {
@@ -990,9 +857,8 @@ impl AndroidSeatRuntime {
                         }
                         if is_xwayland {
                             self.handle_absolute_pointer_move(*id, point, &focus);
-                        } else {
-                            self.handle_touch_move(*id, point, &focus);
                         }
+                        self.handle_touch_move(*id, point, &focus);
                     }
                     RoutedInputEvent::TouchUp { id } => {
                         if self.dispatch_touch_up_gesture(*id) {
@@ -1000,9 +866,8 @@ impl AndroidSeatRuntime {
                         }
                         if is_xwayland {
                             self.handle_absolute_pointer_up(*id);
-                        } else {
-                            self.handle_touch_up(*id);
                         }
+                        self.handle_touch_up(*id);
                     }
                     RoutedInputEvent::TouchCancel { .. } => {
                         let t = self.touch.clone();
@@ -1105,7 +970,6 @@ impl AndroidSeatRuntime {
             RoutedInputEvent::KeyDown { keycode } => {
                 self.ensure_focus_for_non_pointer("key_down");
 
-                // WM7: Alt+Tab / Alt+Shift+Tab — cycle window focus
                 if *keycode == 61 && self.android_modifiers.alt {
                     let dir = if self.android_modifiers.shift { -1 } else { 1 };
                     self.cycle_window_focus(dir);
@@ -1115,28 +979,6 @@ impl AndroidSeatRuntime {
                         "window_switch alt+shift+tab backward".to_string()
                     };
                     return;
-                }
-
-                // WM7: Alt+F4 — close focused window (Android KEYCODE_F4 = 131)
-                if *keycode == 131 && self.android_modifiers.alt {
-                    if let Some(s) = self.focused_surface.clone() {
-                        self.close_surface(s);
-                    }
-                    self.last_seat_dispatch = "alt+f4 close".to_string();
-                    return;
-                }
-
-                // WM7: Escape — dismiss popup or minimize
-                if *keycode == 111 {
-                    if self.popup_grab_active {
-                        if let Some(ref grab_surface) = self.popup_grab_surface.clone() {
-                            self.dismiss_popup(grab_surface);
-                        }
-                        self.popup_grab_active = false;
-                        self.popup_grab_surface = None;
-                        self.last_seat_dispatch = "escape popup_dismiss".to_string();
-                        return;
-                    }
                 }
 
                 let scancode = super::keymap::android_keycode_to_xkb_scancode(*keycode);
@@ -1230,11 +1072,6 @@ impl AndroidSeatRuntime {
                 );
             }
             _ => {}
-        }
-
-        if self.render_pending {
-            self.render_pending = false;
-            self.render_all();
         }
 
         engine_timing::emit_hybrid_trace(format!(

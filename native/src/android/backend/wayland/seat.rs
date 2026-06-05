@@ -1,7 +1,5 @@
 use crate::android::backend::wayland::engine_timing;
 #[cfg(feature = "smithay_android")]
-use crate::android::backend::wayland::input_router::is_xwayland_surface;
-#[cfg(feature = "smithay_android")]
 #[allow(unused_imports)]
 use smithay::desktop::space::SpaceElement;
 #[cfg(feature = "smithay_android")]
@@ -33,8 +31,6 @@ use smithay::input::SeatState;
 #[cfg(feature = "smithay_android")]
 use smithay::output::{Mode as OutputMode, Output, PhysicalProperties, Scale, Subpixel};
 #[cfg(feature = "smithay_android")]
-use smithay::wayland::pointer_constraints::PointerConstraintsState;
-#[cfg(feature = "smithay_android")]
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 #[cfg(feature = "smithay_android")]
@@ -43,6 +39,8 @@ use smithay::reexports::wayland_server::{Client, DisplayHandle, Resource};
 use smithay::utils::Logical;
 #[cfg(feature = "smithay_android")]
 use smithay::utils::Point;
+#[cfg(feature = "smithay_android")]
+use smithay::utils::Rectangle as SmithayRectangle;
 #[cfg(feature = "smithay_android")]
 use smithay::utils::Transform;
 #[cfg(feature = "smithay_android")]
@@ -59,12 +57,12 @@ use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::input_method::InputMethodManagerState;
+#[cfg(feature = "smithay_android")]
+use smithay::wayland::output::OutputManagerState;
+#[cfg(feature = "smithay_android")]
+use smithay::wayland::pointer_constraints::PointerConstraintsState;
+#[cfg(feature = "smithay_android")]
 use smithay::wayland::pointer_gestures::PointerGesturesState;
-use smithay::wayland::selection::primary_selection::PrimarySelectionState;
-#[cfg(feature = "smithay_android")]
-use smithay::wayland::text_input::TextInputManagerState;
-#[cfg(feature = "smithay_android")]
-use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::presentation::PresentationState;
 #[cfg(feature = "smithay_android")]
@@ -72,23 +70,25 @@ use smithay::wayland::relative_pointer::RelativePointerManagerState;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::selection::data_device::DataDeviceState;
 #[cfg(feature = "smithay_android")]
+use smithay::wayland::selection::primary_selection::PrimarySelectionState;
+#[cfg(feature = "smithay_android")]
 use smithay::wayland::selection::wlr_data_control::DataControlState;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
 #[cfg(feature = "smithay_android")]
-use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
-#[cfg(feature = "smithay_android")]
 use smithay::wayland::shell::xdg::XdgShellState;
+#[cfg(feature = "smithay_android")]
+use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::shm::ShmState;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::single_pixel_buffer::SinglePixelBufferState;
 #[cfg(feature = "smithay_android")]
+use smithay::wayland::text_input::{TextInputManagerState, TextInputSeat};
+#[cfg(feature = "smithay_android")]
 use smithay::wayland::viewporter::ViewporterState;
 #[cfg(feature = "smithay_android")]
-use smithay::wayland::output::OutputManagerState;
-#[cfg(feature = "smithay_android")]
-use smithay::wayland::text_input::TextInputSeat;
+use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::xdg_activation::XdgActivationState;
 #[cfg(feature = "smithay_android")]
@@ -208,7 +208,6 @@ pub struct AndroidSeatRuntime {
     pub(crate) popups: PopupManager,
     pub(crate) wl_to_window: HashMap<WlSurface, Window>,
     pub(crate) unmanaged_surfaces: Vec<WlSurface>,
-    pub(crate) unmanaged_positions: HashMap<WlSurface, (i32, i32)>,
     pub(crate) last_seat_dispatch: String,
     pub(crate) last_focus_decision: String,
     pub(crate) cursor_status: Option<CursorImageStatus>,
@@ -223,14 +222,8 @@ pub struct AndroidSeatRuntime {
     pub(crate) swipe_starts: HashMap<i32, (f32, f32, f32, f32)>,
     pub(crate) active_touch_ids: HashSet<i32>,
     pub(crate) swipe_cycle_armed: bool,
-    pub(crate) touch_finger1_down_ms: u32,
-    pub(crate) touch_rightclick_armed: bool,
-    pub(crate) touch_hold_ms: u32,
-    pub(crate) touch_hold_origin: (f32, f32),
-    pub(crate) touch_longpress_armed: bool,
     pub(crate) last_window_cycle_ms: u32,
     pub(crate) window_cycle_cooldown_ms: u32,
-    pub(crate) mru_list: Vec<WlSurface>,
     pub(crate) rendering_active: bool,
     pub(crate) xwayland_shell_state: XWaylandShellState,
     pub(crate) x11_wm: Option<X11Wm>,
@@ -240,17 +233,18 @@ pub struct AndroidSeatRuntime {
     pub(crate) gesture_target: Option<GestureTarget>,
     pub(crate) gesture_surface: Option<WlSurface>,
     pub(crate) gesture_origin: (f32, f32),
-    pub(crate) render_pending: bool,
     pub(crate) relative_sensitivity: f32,
     pub(crate) physical_size: (i32, i32),
     pub(crate) screen_size: (i32, i32),
     pub(crate) foreign_toplevel_handles: HashMap<WlSurface, ForeignToplevelHandle>,
     pub(crate) minimized: HashMap<WlSurface, Point<i32, Logical>>,
     pub(crate) maximize_restore: HashMap<WlSurface, Point<i32, Logical>>,
+    pub(crate) fullscreen_restore: HashMap<WlSurface, smithay::utils::Rectangle<i32, smithay::utils::Logical>>,
     pub(crate) render_sender: crossbeam_channel::Sender<Vec<crate::android::backend::smithay_backend::RenderItem>>,
     pub(crate) clipboard_text: Arc<Mutex<String>>,
     pub(crate) last_activation_serial: Option<Serial>,
     pub(crate) trackpad_anchor: Option<(f32, f32)>,
+    pub(crate) pending_compositor_move: bool,
     pub(crate) trackpad_moved: bool,
     pub(crate) trackpad_tap_fingers: Vec<i32>,
     pub(crate) trackpad_hold_start_ms: u32,
@@ -259,6 +253,8 @@ pub struct AndroidSeatRuntime {
     pub(crate) ext_workspace_state: ExtWorkspaceManagerState,
     pub(crate) pointer_gestures_state: PointerGesturesState,
     pub(crate) pointer_constraints_state: PointerConstraintsState,
+    pub(crate) x11_window_to_surface: HashMap<u32, WlSurface>,
+    pub(crate) x11_pending_pings: HashMap<u32, u32>,
 }
 
 #[cfg(feature = "smithay_android")]
@@ -509,7 +505,6 @@ impl AndroidSeatRuntime {
             popups: PopupManager::default(),
             wl_to_window: HashMap::new(),
             unmanaged_surfaces: Vec::new(),
-            unmanaged_positions: HashMap::new(),
             last_seat_dispatch: "none".to_string(),
             last_focus_decision: "none".to_string(),
             cursor_status: None,
@@ -524,17 +519,12 @@ impl AndroidSeatRuntime {
             swipe_starts: HashMap::new(),
             active_touch_ids: HashSet::new(),
             swipe_cycle_armed: false,
-            touch_finger1_down_ms: 0,
-            touch_rightclick_armed: false,
-            touch_hold_ms: 0,
-            touch_hold_origin: (0.0, 0.0),
-            touch_longpress_armed: false,
             last_window_cycle_ms: 0,
             window_cycle_cooldown_ms: 250,
-            mru_list: Vec::new(),
             rendering_active: true,
             minimized: HashMap::new(),
             maximize_restore: HashMap::new(),
+            fullscreen_restore: HashMap::new(),
             xwayland_shell_state: init_stage("xwayland_shell_state", || {
                 XWaylandShellState::new::<Self>(display)
             }),
@@ -545,7 +535,6 @@ impl AndroidSeatRuntime {
             gesture_origin: (0.0, 0.0),
             popup_grab_active: false,
             popup_grab_surface: None,
-            render_pending: false,
             relative_sensitivity: 1.0,
             physical_size: crate::android::command_channel::get_physical_size(),
             screen_size: (width, height),
@@ -565,6 +554,7 @@ impl AndroidSeatRuntime {
             clipboard_text: Arc::new(Mutex::new(String::new())),
             last_activation_serial: None,
             trackpad_anchor: None,
+            pending_compositor_move: false,
             trackpad_moved: false,
             trackpad_tap_fingers: Vec::new(),
             trackpad_hold_start_ms: 0,
@@ -573,6 +563,8 @@ impl AndroidSeatRuntime {
             ext_workspace_state,
             pointer_gestures_state,
             pointer_constraints_state,
+            x11_window_to_surface: HashMap::new(),
+            x11_pending_pings: HashMap::new(),
         })
     }
 
@@ -658,14 +650,8 @@ impl AndroidSeatRuntime {
     pub(crate) fn close_surface(&mut self, surface: WlSurface) {
         if let Some(window) = self.wl_to_window.get(&surface) {
             if let Some(x11) = window.x11_surface() {
-                if let Err(e) = x11.close() {
-                    log::error!("XWayland: close_window failed id={}: {:?}", x11.window_id(), e);
-                }
-                log::info!(
-                    "SmithayRuntime: sent close to X11 window {:?} surface {:?}",
-                    x11.window_id(),
-                    surface.id()
-                );
+                let _ = x11.close();
+                log::info!("SmithayRuntime: closed X11 surface {:?}", surface.id());
                 return;
             }
         }
@@ -718,14 +704,8 @@ impl AndroidSeatRuntime {
                 if let Some(x11) = window.x11_surface() {
                     let _ = x11.set_maximized(false);
                 }
-                // Clamp restore position to screen bounds
-                let (sw, sh) = self.usable_screen_size();
-                let clamped = (
-                    pos.x.max(0).min((sw - 100).max(0)),
-                    pos.y.max(self.reserved_top).min((sh - 100).max(self.reserved_top)),
-                );
                 self.space
-                    .relocate_element(&WindowElement(window.clone()), clamped);
+                    .relocate_element(&WindowElement(window.clone()), pos);
             }
         } else {
             if let Some(window) = self.wl_to_window.get(&surface) {
@@ -755,10 +735,9 @@ impl AndroidSeatRuntime {
         // إزالة الأسطح الميتة من الجداول
         self.wl_to_window.retain(|s, _| s.is_alive());
         self.unmanaged_surfaces.retain(|s| s.is_alive());
-        self.unmanaged_positions.retain(|s, _| s.is_alive());
-        self.mru_list.retain(|s| s.is_alive());
         self.minimized.retain(|s, _| s.is_alive());
         self.maximize_restore.retain(|s, _| s.is_alive());
+        self.fullscreen_restore.retain(|s, _| s.is_alive());
         self.foreign_toplevel_handles.retain(|s, handle| {
             if !s.is_alive() {
                 self.foreign_toplevel_list_state.remove_toplevel(handle);
@@ -817,7 +796,6 @@ impl AndroidSeatRuntime {
             }
         }
         self.unmanaged_surfaces.retain(|s| s != popup_surface);
-        self.unmanaged_positions.remove(popup_surface);
         if self.popup_grab_surface.as_ref() == Some(popup_surface) {
             self.popup_grab_active = false;
             self.popup_grab_surface = None;
@@ -848,6 +826,16 @@ impl AndroidSeatRuntime {
             keyboard.set_focus(self, None, SERIAL_COUNTER.next_serial());
         }
         log::info!("SmithayRuntime: focus cleared");
+    }
+
+    fn shm_slice<'a>(ptr: *const u8, len: usize, info: &smithay::wayland::shm::BufferData) -> Option<&'a [u8]> {
+        let expected = info.offset as usize + info.stride as usize * info.height as usize;
+        if len < expected {
+            log::warn!("SHM buffer corrupted: pool_len={} < expected={} (offset={} stride={} height={})",
+                len, expected, info.offset, info.stride, info.height);
+            return None;
+        }
+        Some(unsafe { std::slice::from_raw_parts(ptr, len) })
     }
 
     fn get_surface_buffer(wl_surface: &WlSurface) -> Option<WlBuffer> {
@@ -939,24 +927,12 @@ impl AndroidSeatRuntime {
                         continue;
                     }
                     match with_buffer_contents(&buffer, |ptr, len, info| {
+                        let Some(slice) = Self::shm_slice(ptr, len, &info) else { return };
                         let width = info.width as i32;
                         let height = info.height as i32;
                         let stride = info.stride as usize;
                         let offset = info.offset as usize;
                         let fmt = format!("{:?}", info.format);
-
-                        let total_needed = offset.checked_add(height as usize * stride)
-                            .unwrap_or(usize::MAX);
-                        if total_needed > len {
-                            if log_this {
-                                log::warn!(
-                                    "  space[{}]: buffer size {} < needed {} (off={} stride={} h={})",
-                                    idx, len, total_needed, offset, stride, height
-                                );
-                            }
-                            return;
-                        }
-                        let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
 
                         let mut pixels = Vec::with_capacity((width * height * 4) as usize);
                         for y in 0..height {
@@ -988,19 +964,6 @@ impl AndroidSeatRuntime {
                         }
 
                         if !pixels.is_empty() {
-                            if is_xwayland_surface(wl_surface) {
-                                for p in pixels.chunks_exact_mut(4) {
-                                    p[3] = 255;
-                                }
-                            }
-                            // WM2: Dim inactive windows by 50%
-                            if self.focused_surface.as_ref().map_or(true, |f| f != wl_surface) {
-                                for p in pixels.chunks_exact_mut(4) {
-                                    p[0] = (p[0] as u16 / 2) as u8;
-                                    p[1] = (p[1] as u16 / 2) as u8;
-                                    p[2] = (p[2] as u16 / 2) as u8;
-                                }
-                            }
                             render_list.push((pixels, loc.x, loc.y, width, height, surface_scale));
                         }
                     }) {
@@ -1030,23 +993,11 @@ impl AndroidSeatRuntime {
                             continue;
                         }
                         let _ = with_buffer_contents(&buffer, |ptr, len, info| {
+                            let Some(slice) = Self::shm_slice(ptr, len, &info) else { return };
                             let width = info.width as i32;
                             let height = info.height as i32;
                             let stride = info.stride as usize;
                             let offset = info.offset as usize;
-
-                            let total_needed = offset.checked_add(height as usize * stride)
-                                .unwrap_or(usize::MAX);
-                            if total_needed > len {
-                                if log_this {
-                                    log::warn!(
-                                        "  popup: buffer size {} < needed {} (off={} stride={} h={})",
-                                        len, total_needed, offset, stride, height
-                                    );
-                                }
-                                return;
-                            }
-                            let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
 
                             let mut pixels = Vec::with_capacity((width * height * 4) as usize);
                             for y in 0..height {
@@ -1083,24 +1034,12 @@ impl AndroidSeatRuntime {
                     continue;
                 }
                 match with_buffer_contents(&buffer, |ptr, len, info| {
+                    let Some(slice) = Self::shm_slice(ptr, len, &info) else { return };
                     let width = info.width as i32;
                     let height = info.height as i32;
                     let stride = info.stride as usize;
                     let offset = info.offset as usize;
                     let fmt = format!("{:?}", info.format);
-
-                    let total_needed = offset.checked_add(height as usize * stride)
-                        .unwrap_or(usize::MAX);
-                    if total_needed > len {
-                        if log_this {
-                            log::warn!(
-                                "  unmanaged[{}]: buffer size {} < needed {} (off={} stride={} h={})",
-                                idx, len, total_needed, offset, stride, height
-                            );
-                        }
-                        return;
-                    }
-                    let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
 
                     let mut pixels = Vec::with_capacity((width * height * 4) as usize);
                     for y in 0..height {
@@ -1132,8 +1071,7 @@ impl AndroidSeatRuntime {
                     }
 
                     if !pixels.is_empty() {
-                        let upos = self.unmanaged_positions.get(s).copied().unwrap_or((0, self.reserved_top));
-                        render_list.push((pixels, upos.0, upos.1, width, height, surface_scale));
+                        render_list.push((pixels, 0, self.reserved_top, width, height, surface_scale));
                     }
                 }) {
                     Ok(_) => {},
@@ -1149,17 +1087,9 @@ impl AndroidSeatRuntime {
         }
 
         // ── Cursor overlay ──
-        // When focused on an XWayland surface, XWayland renders its own cursor
-        // embedded in the surface buffer. Skip the Wayland software cursor to
-        // avoid a double-cursor artifact (Wayland cursor + XWayland cursor).
         let cursor_pos = self.pointer.current_location();
-        let cursor_visible = self.focused_surface.as_ref()
-            .map_or(true, |s| !is_xwayland_surface(s));
-        if !cursor_visible {
-            if log_this {
-                log::info!("  cursor: hidden (XWayland focus)");
-            }
-        } else if let Some(ref cursor_status) = self.cursor_status {
+
+        if let Some(ref cursor_status) = self.cursor_status {
             match cursor_status {
                 CursorImageStatus::Hidden => {}
                 CursorImageStatus::Named(_) => {
@@ -1191,15 +1121,8 @@ impl AndroidSeatRuntime {
                                 .unwrap_or(Point::from((0, 0)))
                         });
 
-                        // M2: Default hotspot to center (8,8) if client didn't set one
-                        let (hx, hy) = if hotspot.x == 0 && hotspot.y == 0 {
-                            (8, 8)
-                        } else {
-                            (hotspot.x, hotspot.y)
-                        };
-
-                        let cx = cursor_pos.x as i32 - hx;
-                        let cy = cursor_pos.y as i32 - hy;
+                        let cx = cursor_pos.x as i32 - hotspot.x;
+                        let cy = cursor_pos.y as i32 - hotspot.y;
 
                         let buffer_info = Self::get_surface_buffer(wl_surface);
                         if let Some(buffer) = buffer_info {
@@ -1212,7 +1135,7 @@ impl AndroidSeatRuntime {
                                 }
                             } else {
                                 let _ = with_buffer_contents(&buffer, |ptr, len, info| {
-                                    let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
+                                    let Some(slice) = Self::shm_slice(ptr, len, &info) else { return };
                                     let width = info.width as i32;
                                     let height = info.height as i32;
                                     let stride = info.stride as usize;
