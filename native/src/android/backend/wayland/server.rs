@@ -268,14 +268,21 @@ impl WaylandServer {
             };
         let handle = event_loop.handle();
         let wm = match X11Wm::start_wm(handle, &dh, stream, client) {
-            Ok(wm) => wm,
-            Err(e) => {
-                log::error!("XWayland: X11Wm::start_wm failed: {}", e);
-                return;
-            }
-        };
-        let xwm_id = wm.id();
-        self.runtime.x11_wm = Some(wm);
+             Ok(wm) => wm,
+             Err(e) => {
+                 log::error!("XWayland: X11Wm::start_wm failed: {}", e);
+                 return;
+             }
+         };
+         // Hide the X11 root cursor — our software cursor does all rendering.
+         // Prevents a double-cursor artifact where XWayland's glyph cursor
+         // shows on top of the compositor's software cursor.
+         {
+             let transparent = vec![0u8; 4]; // 1×1 RGBA fully transparent
+             let _ = wm.set_cursor(&transparent, (1u16, 1u16).into(), (0u16, 0u16).into());
+         }
+         let xwm_id = wm.id();
+         self.runtime.x11_wm = Some(wm);
         self.runtime.xwayland_shell_state.xwm_id = Some(xwm_id);
         self.xwayland_event_loop = Some(event_loop);
         log::info!("XWayland: connected to display :{}", display_num);
