@@ -83,6 +83,7 @@ pub struct WaylandServer {
     accepted_clients: u64,
     missing_socket_reported: bool,
     xwayland_event_loop: Option<calloop::EventLoop<'static, AndroidSeatRuntime>>,
+    xwayland_reconnect_at: Option<std::time::Instant>,
 }
 
 #[cfg(feature = "smithay_android")]
@@ -230,6 +231,7 @@ impl WaylandServer {
             accepted_clients: 0,
             missing_socket_reported: false,
             xwayland_event_loop: None,
+            xwayland_reconnect_at: None,
         })
     }
 
@@ -349,11 +351,29 @@ impl WaylandServer {
 
         if let Some(ref mut event_loop) = self.xwayland_event_loop {
             if let Err(e) = event_loop.dispatch(Duration::ZERO, &mut self.runtime) {
-                log::error!("XWayland: event loop dispatch error: {:?}. Clearing XWayland state.", e);
+                log::error!("XWayland: event loop dispatch error: {:?}. Will retry in 2s.", e);
                 self.xwayland_event_loop = None;
                 self.runtime.x11_wm = None;
-                let _ = self.xwayland_event_loop.take();
+                self.runtime.xwayland_shell_state.xwm_id = None;
+                self.xwayland_reconnect_at = Some(std::time::Instant::now() + Duration::from_secs(2));
             }
+        }
+
+        if let Some(reconnect_at) = self.xwayland_reconnect_at {
+            if std::time::Instant::now() >= reconnect_at {
+                self.xwayland_reconnect_at = None;
+                if let Ok(display_str) = std::env::var("WINLAND_XWAYLAND_DISPLAY") {
+                    if let Ok(n) = display_str.parse::<i32>() {
+                        log::info!("XWayland: attempting reconnection to display :{}", n);
+                        self.connect_xwayland(n);
+                    }
+                }
+            }
+        }
+
+        let pending_pings = self.runtime.x11_pending_pings.len();
+        if pending_pings > 0 && pending_pings % 100 == 0 {
+            log::warn!("XWayland: {} pending pings not acked", pending_pings);
         }
 
         let dispatch_result = catch_unwind(AssertUnwindSafe(|| {

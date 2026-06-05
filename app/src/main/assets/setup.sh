@@ -30,7 +30,8 @@ install_desktop_packages() {
         labwc \
         xwayland \
         dbus-x11 \
-        pulseaudio-utils
+        pulseaudio-utils \
+        wlr-randr
 }
 
 enable_xfce_wayland_experimental() {
@@ -54,6 +55,13 @@ fi
 
 enable_xfce_wayland_experimental
 
+mkdir -p /etc/xdg/labwc
+cat > /etc/xdg/labwc/autostart <<'EOF_AUTOSTART'
+#!/bin/bash
+wlr-randr --output WL-1 --custom-mode 1080x2296
+EOF_AUTOSTART
+chmod +x /etc/xdg/labwc/autostart
+
 RUNTIME_DIR="/tmp/xdg-runtime"
 XDG_RUNTIME_DIR_VAL="/tmp"
 PULSE_SERVER_VAL="unix:/tmp/pulse-socket"
@@ -61,6 +69,7 @@ mkdir -p "$RUNTIME_DIR"
 chmod 700 "$RUNTIME_DIR"
 
 export DISPLAY=:0
+export DISPLAY=:1
 export WAYLAND_DISPLAY=wayland-0
 export PULSE_SERVER=127.0.0.1
 export XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR_VAL"
@@ -73,6 +82,7 @@ export PULSE_SERVER="$PULSE_SERVER_VAL"
 
 cat >> /root/.bashrc <<EOF_BASHRC
 export DISPLAY=:0
+export DISPLAY=:1
 export PULSE_SERVER=127.0.0.1
 export WAYLAND_DISPLAY=wayland-0
 export XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR_VAL
@@ -86,6 +96,7 @@ EOF_BASHRC
 
 cat >> /etc/profile <<EOF_PROFILE
 export DISPLAY=:0
+export DISPLAY=:1
 export PULSE_SERVER=127.0.0.1
 export WAYLAND_DISPLAY=wayland-0
 export XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR_VAL
