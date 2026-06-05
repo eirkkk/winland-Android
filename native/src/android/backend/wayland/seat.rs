@@ -1018,6 +1018,17 @@ impl AndroidSeatRuntime {
         }
 
         for (idx, s) in self.unmanaged_surfaces.iter().enumerate() {
+            // Skip cursor surfaces — rendered separately by cursor overlay code at cursor_pos
+            let is_cursor = with_states(s, |states| {
+                states.data_map.get::<CursorImageSurfaceData>().is_some()
+            });
+            if is_cursor {
+                if log_this {
+                    log::info!("  unmanaged[{}]: skip — cursor surface (rendered as overlay)", idx);
+                }
+                continue;
+            }
+
             let buffer_info = Self::get_surface_buffer(s);
 
             let surface_scale = with_states(s, |states| {
