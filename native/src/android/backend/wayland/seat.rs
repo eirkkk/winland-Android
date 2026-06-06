@@ -944,6 +944,56 @@ impl AndroidSeatRuntime {
         });
     }
 
+    fn try_read_dmabuf_via_mmap(fd: std::os::raw::c_int, offset: usize, stride: usize, width: usize, height: usize) -> Option<Vec<u8>> {
+        let map_len = offset + stride * height;
+        let ptr = unsafe {
+            libc::mmap(std::ptr::null_mut(), map_len,
+                       libc::PROT_READ, libc::MAP_SHARED, fd, 0)
+        };
+        if ptr == libc::MAP_FAILED {
+            log::warn!("dmabuf mmap FAILED fd={} map_len={}", fd, map_len);
+            return None;
+        }
+        let mut pixels = Vec::with_capacity(width * height * 4);
+        unsafe {
+            let base = (ptr as *const u8).add(offset);
+            for row in 0..height {
+                let slice = std::slice::from_raw_parts(
+                    base.add(row * stride), width * 4);
+                pixels.extend_from_slice(slice);
+            }
+            libc::munmap(ptr, map_len);
+        }
+        if pixels.is_empty() {
+            return None;
+        }
+        Some(pixels)
+    }
+
+    fn try_read_dmabuf_via_pread(fd: std::os::raw::c_int, offset: usize, stride: usize, width: usize, height: usize) -> Option<Vec<u8>> {
+        let read_len = offset + stride * height;
+        let mut buf = vec![0u8; read_len];
+        let nread = unsafe {
+            libc::pread(fd, buf.as_mut_ptr() as *mut libc::c_void, read_len, 0)
+        };
+        if nread < 0 {
+            log::warn!("dmabuf pread FAILED fd={} read_len={}", fd, read_len);
+            return None;
+        }
+        let available = nread as usize;
+        let mut pixels = Vec::with_capacity(width * height * 4);
+        for row in 0..height {
+            let row_off = offset + row * stride;
+            if row_off + width * 4 <= available {
+                pixels.extend_from_slice(&buf[row_off..row_off + width * 4]);
+            }
+        }
+        if pixels.is_empty() {
+            return None;
+        }
+        Some(pixels)
+    }
+
     fn try_get_dmabuf_render_item(
         buffer: &WlBuffer,
         x: i32,
@@ -962,33 +1012,11 @@ impl AndroidSeatRuntime {
         let stride = dmabuf.strides().next()? as usize;
         let offset = dmabuf.offsets().next().unwrap_or(0) as usize;
         let fd = handle.as_raw_fd();
-        let map_len = offset + stride * height;
 
-        let ptr = unsafe {
-            libc::mmap(std::ptr::null_mut(), map_len,
-                       libc::PROT_READ, libc::MAP_SHARED, fd, 0)
-        };
-        if ptr == libc::MAP_FAILED {
-            log::warn!("dmabuf mmap FAILED fd={} map_len={}", fd, map_len);
-            return None;
-        }
+        let pixels = Self::try_read_dmabuf_via_mmap(fd, offset, stride, width, height)
+            .or_else(|| Self::try_read_dmabuf_via_pread(fd, offset, stride, width, height))?;
 
-        let mut pixels = Vec::with_capacity(width * height * 4);
-        unsafe {
-            let base = (ptr as *const u8).add(offset);
-            for row in 0..height {
-                let slice = std::slice::from_raw_parts(
-                    base.add(row * stride), width * 4);
-                pixels.extend_from_slice(slice);
-            }
-            libc::munmap(ptr, map_len);
-        }
-
-        if pixels.is_empty() {
-            return None;
-        }
-
-        log::info!("dmabuf mmap OK fd={} {}x{} stride={} offset={} map_len={}", fd, width, height, stride, offset, map_len);
+        log::info!("dmabuf read OK fd={} {}x{} stride={} offset={}", fd, width, height, stride, offset);
 
         Some(RenderItem::Shm {
             pixels,
@@ -1080,9 +1108,6 @@ impl AndroidSeatRuntime {
                             }
                         }
 
-                        if info.format == smithay::reexports::wayland_server::protocol::wl_shm::Format::Argb8888 {
-                            for px in pixels.chunks_mut(4) { if px[3] == 0 { px[3] = 255; } }
-                        }
                         if log_this {
                             let sample = if pixels.len() >= 8 {
                                 format!(
@@ -1167,10 +1192,6 @@ impl AndroidSeatRuntime {
                                 }
                             }
 
-                            if info.format == smithay::reexports::wayland_server::protocol::wl_shm::Format::Argb8888 {
-                                for px in pixels.chunks_mut(4) { if px[3] == 0 { px[3] = 255; } }
-                            }
-
                             if !pixels.is_empty() {
                                 render_list.push(RenderItem::Shm { pixels, x: abs_loc.x, y: abs_loc.y, width, height, scale: popup_scale, is_cursor: false });
                             }
@@ -1235,10 +1256,6 @@ impl AndroidSeatRuntime {
                                 log::warn!("  unmanaged[{}]: row {} exceeds slice len {} (start={} end={})", idx, y, slice.len(), start, end);
                             }
                         }
-                    }
-
-                    if info.format == smithay::reexports::wayland_server::protocol::wl_shm::Format::Argb8888 {
-                        for px in pixels.chunks_mut(4) { if px[3] == 0 { px[3] = 255; } }
                     }
 
                     if log_this {
