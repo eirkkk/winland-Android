@@ -24,16 +24,16 @@ pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem])
         let logical_sw = physical_sw / scale;
         let logical_sh = physical_sh / scale;
 
-        // Lazy init shader program
         if state.gl_program.is_none() {
             let vs_src = "attribute vec2 aPos; attribute vec2 aTex; varying vec2 vTex; void main(){ vTex=aTex; gl_Position=vec4(aPos,0.0,1.0); }";
-            let fs_src = "precision mediump float; varying vec2 vTex; uniform sampler2D uTex; void main(){ gl_FragColor = texture2D(uTex, vTex).bgra; }";
+            let fs_src = "precision mediump float; varying vec2 vTex; uniform sampler2D uTex; void main(){ vec4 c=texture2D(uTex,vTex); gl_FragColor=vec4(c.b,c.g,c.r,1.0); }";
 
             unsafe {
                 let vs = gl::CreateShader(gl::VERTEX_SHADER);
                 let c_vs = std::ffi::CString::new(vs_src).unwrap();
                 gl::ShaderSource(vs, 1, &c_vs.as_ptr(), std::ptr::null());
                 gl::CompileShader(vs);
+
                 let fs = gl::CreateShader(gl::FRAGMENT_SHADER);
                 let c_fs = std::ffi::CString::new(fs_src).unwrap();
                 gl::ShaderSource(fs, 1, &c_fs.as_ptr(), std::ptr::null());
@@ -45,8 +45,8 @@ pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem])
                 gl::BindAttribLocation(program, 1, std::ffi::CString::new("aTex").unwrap().as_ptr());
                 gl::LinkProgram(program);
                 state.gl_program = Some(program as u32);
-                gl::DeleteShader(vs);
                 gl::DeleteShader(fs);
+                gl::DeleteShader(vs);
             }
         }
 
@@ -63,65 +63,65 @@ pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem])
         gl::Clear(gl::COLOR_BUFFER_BIT);
         gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
 
-        if let Some(prog) = state.gl_program {
-            gl::UseProgram(prog);
-
-            for item in surfaces {
-                if item.is_cursor() {
-                    gl::Enable(gl::BLEND);
-                    gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-                } else {
-                    gl::Disable(gl::BLEND);
-                }
-
-                let (_item_w, _item_h, item_x, item_y, item_scale) = match *item {
-                    RenderItem::Shm { width, height, x, y, scale, .. } => (width, height, x, y, scale),
-                };
-
-                match *item {
-                    RenderItem::Shm { ref pixels, width, height, .. } => {
-                        let mut tex: gl::types::GLuint = 0;
-                        gl::GenTextures(1, &mut tex);
-                        gl::BindTexture(gl::TEXTURE_2D, tex);
-                        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::types::GLint);
-                        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::types::GLint);
-                        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as gl::types::GLint);
-                        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as gl::types::GLint);
-                        gl::TexImage2D(
-                            gl::TEXTURE_2D, 0, gl::RGBA as gl::types::GLint,
-                            width, height, 0, gl::RGBA, gl::UNSIGNED_BYTE,
-                            pixels.as_ptr() as *const std::ffi::c_void,
-                        );
-
-                        let logical_w = width as f32 / item_scale;
-                        let logical_h = height as f32 / item_scale;
-                        let x0 = (item_x as f32 / logical_sw) * 2.0 - 1.0;
-                        let y0 = 1.0 - (item_y as f32 / logical_sh) * 2.0;
-                        let x1 = ((item_x as f32 + logical_w) / logical_sw) * 2.0 - 1.0;
-                        let y1 = 1.0 - ((item_y as f32 + logical_h) / logical_sh) * 2.0;
-
-                        let verts: [f32; 16] = [
-                            x0, y1, 0.0, 1.0,
-                            x1, y1, 1.0, 1.0,
-                            x0, y0, 0.0, 0.0,
-                            x1, y0, 1.0, 0.0,
-                        ];
-
-                        let stride = (4 * std::mem::size_of::<f32>()) as i32;
-                        gl::EnableVertexAttribArray(0);
-                        gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, verts.as_ptr() as *const std::ffi::c_void);
-                        gl::EnableVertexAttribArray(1);
-                        gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, stride, verts.as_ptr().add(2) as *const std::ffi::c_void);
-                        gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
-                        gl::DisableVertexAttribArray(0);
-                        gl::DisableVertexAttribArray(1);
-                        gl::DeleteTextures(1, &tex);
-                    }
-                }
+        for item in surfaces {
+            if let Some(prog) = state.gl_program {
+                gl::UseProgram(prog);
             }
 
-            gl::UseProgram(0);
+            if item.is_cursor() {
+                gl::Enable(gl::BLEND);
+                gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+            } else {
+                gl::Disable(gl::BLEND);
+            }
+
+            let (_item_w, _item_h, item_x, item_y, item_scale) = match *item {
+                RenderItem::Shm { width, height, x, y, scale, .. } => (width, height, x, y, scale),
+            };
+
+            match *item {
+                RenderItem::Shm { ref pixels, width, height, .. } => {
+                    let mut tex: gl::types::GLuint = 0;
+                    gl::GenTextures(1, &mut tex);
+                    gl::BindTexture(gl::TEXTURE_2D, tex);
+                    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::types::GLint);
+                    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::types::GLint);
+                    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as gl::types::GLint);
+                    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as gl::types::GLint);
+                    gl::TexImage2D(
+                        gl::TEXTURE_2D, 0, gl::RGBA as gl::types::GLint,
+                        width, height, 0, gl::RGBA, gl::UNSIGNED_BYTE,
+                        pixels.as_ptr() as *const std::ffi::c_void,
+                    );
+
+                    let logical_w = width as f32 / item_scale;
+                    let logical_h = height as f32 / item_scale;
+                    let x0 = (item_x as f32 / logical_sw) * 2.0 - 1.0;
+                    let y0 = 1.0 - (item_y as f32 / logical_sh) * 2.0;
+                    let x1 = ((item_x as f32 + logical_w) / logical_sw) * 2.0 - 1.0;
+                    let y1 = 1.0 - ((item_y as f32 + logical_h) / logical_sh) * 2.0;
+
+                    let verts: [f32; 16] = [
+                        x0, y1, 0.0, 1.0,
+                        x1, y1, 1.0, 1.0,
+                        x0, y0, 0.0, 0.0,
+                        x1, y0, 1.0, 0.0,
+                    ];
+
+                    let stride = (4 * std::mem::size_of::<f32>()) as i32;
+                    gl::EnableVertexAttribArray(0);
+                    gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, stride, verts.as_ptr() as *const std::ffi::c_void);
+                    gl::EnableVertexAttribArray(1);
+                    gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, stride, verts.as_ptr().add(2) as *const std::ffi::c_void);
+                    gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
+                    gl::DisableVertexAttribArray(0);
+                    gl::DisableVertexAttribArray(1);
+                    gl::DeleteTextures(1, &tex);
+                }
+            }
         }
+
+        gl::UseProgram(0);
 
         eglSwapBuffers(display, surface);
         let _ = eglMakeCurrent(display, egl::NO_SURFACE, egl::NO_SURFACE, egl::NO_CONTEXT);
@@ -380,9 +380,7 @@ pub fn bind_native_window(state: &mut AndroidSmithayState, native_window_ptr: *m
 
         unsafe { ndk_sys::ANativeWindow_acquire(native_window_ptr); }
 
-        let format = unsafe { ndk_sys::ANativeWindow_getFormat(native_window_ptr) };
-        let fmt = if format > 0 { format } else { 1 };
-        unsafe { ndk_sys::ANativeWindow_setBuffersGeometry(native_window_ptr, 0, 0, fmt); }
+        unsafe { ndk_sys::ANativeWindow_setBuffersGeometry(native_window_ptr, 0, 0, 2); }
 
         let mut attempts = 0;
         loop {
@@ -440,20 +438,19 @@ pub fn bind_native_window(state: &mut AndroidSmithayState, native_window_ptr: *m
                has_dmabuf, snippet);
     state.has_dmabuf_import = has_dmabuf;
 
-    let mut visual_format = unsafe { ndk_sys::ANativeWindow_getFormat(native_window_ptr) };
-    if visual_format <= 0 {
-        visual_format = 1;
+    unsafe {
+        ndk_sys::ANativeWindow_setBuffersGeometry(native_window_ptr, 0, 0, 2);
     }
 
     let mut config: egl::EGLConfig = std::ptr::null_mut();
     let mut num_config = 0;
     let config_attempts = [
         [
-            egl::RED_SIZE, 8, egl::GREEN_SIZE, 8, egl::BLUE_SIZE, 8, egl::ALPHA_SIZE, 8,
+            egl::RED_SIZE, 8, egl::GREEN_SIZE, 8, egl::BLUE_SIZE, 8, egl::ALPHA_SIZE, 0,
             egl::SURFACE_TYPE, egl::WINDOW_BIT, egl::NONE,
         ],
         [
-            egl::RED_SIZE, 8, egl::GREEN_SIZE, 8, egl::BLUE_SIZE, 8, egl::ALPHA_SIZE, 0,
+            egl::RED_SIZE, 8, egl::GREEN_SIZE, 8, egl::BLUE_SIZE, 8, egl::ALPHA_SIZE, 8,
             egl::SURFACE_TYPE, egl::WINDOW_BIT, egl::NONE,
         ],
         [
@@ -473,10 +470,6 @@ pub fn bind_native_window(state: &mut AndroidSmithayState, native_window_ptr: *m
 
     if !found_config {
         return Err("EGL: ChooseConfig failed".to_string());
-    }
-
-    unsafe {
-        ndk_sys::ANativeWindow_setBuffersGeometry(native_window_ptr, 0, 0, visual_format);
     }
 
     let mut surface = egl::NO_SURFACE;
@@ -519,13 +512,14 @@ pub fn bind_native_window(state: &mut AndroidSmithayState, native_window_ptr: *m
 
     if state.gl_program.is_none() {
         let vs_src = "attribute vec2 aPos; attribute vec2 aTex; varying vec2 vTex; void main(){ vTex=aTex; gl_Position=vec4(aPos,0.0,1.0); }";
-        let fs_src = "precision mediump float; varying vec2 vTex; uniform sampler2D uTex; void main(){ gl_FragColor = texture2D(uTex, vTex).bgra; }";
+            let fs_src = "precision mediump float; varying vec2 vTex; uniform sampler2D uTex; void main(){ vec4 c=texture2D(uTex,vTex); gl_FragColor=vec4(c.b,c.g,c.r,1.0); }";
 
         unsafe {
             let vs = gl::CreateShader(gl::VERTEX_SHADER);
             let c_vs = std::ffi::CString::new(vs_src).unwrap();
             gl::ShaderSource(vs, 1, &c_vs.as_ptr(), std::ptr::null());
             gl::CompileShader(vs);
+
             let fs = gl::CreateShader(gl::FRAGMENT_SHADER);
             let c_fs = std::ffi::CString::new(fs_src).unwrap();
             gl::ShaderSource(fs, 1, &c_fs.as_ptr(), std::ptr::null());
@@ -537,8 +531,8 @@ pub fn bind_native_window(state: &mut AndroidSmithayState, native_window_ptr: *m
             gl::BindAttribLocation(program, 1, std::ffi::CString::new("aTex").unwrap().as_ptr());
             gl::LinkProgram(program);
             state.gl_program = Some(program as u32);
-            gl::DeleteShader(vs);
             gl::DeleteShader(fs);
+            gl::DeleteShader(vs);
         }
     }
 
