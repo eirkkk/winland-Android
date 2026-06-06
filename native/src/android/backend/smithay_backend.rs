@@ -27,6 +27,7 @@ pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem])
         if state.gl_program.is_none() {
             let vs_src = "attribute vec2 aPos; attribute vec2 aTex; varying vec2 vTex; void main(){ vTex=aTex; gl_Position=vec4(aPos,0.0,1.0); }";
             let fs_src = "precision mediump float; varying vec2 vTex; uniform sampler2D uTex; void main(){ vec4 c=texture2D(uTex,vTex); gl_FragColor=vec4(c.b,c.g,c.r,1.0); }";
+            let fs_cursor_src = "precision mediump float; varying vec2 vTex; uniform sampler2D uTex; void main(){ vec4 c=texture2D(uTex,vTex); gl_FragColor=vec4(c.b,c.g,c.r,c.a); }";
 
             unsafe {
                 let vs = gl::CreateShader(gl::VERTEX_SHADER);
@@ -46,6 +47,19 @@ pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem])
                 gl::LinkProgram(program);
                 state.gl_program = Some(program as u32);
                 gl::DeleteShader(fs);
+
+                let fs_cursor = gl::CreateShader(gl::FRAGMENT_SHADER);
+                let c_fs_cursor = std::ffi::CString::new(fs_cursor_src).unwrap();
+                gl::ShaderSource(fs_cursor, 1, &c_fs_cursor.as_ptr(), std::ptr::null());
+                gl::CompileShader(fs_cursor);
+                let cursor_program = gl::CreateProgram();
+                gl::AttachShader(cursor_program, vs);
+                gl::AttachShader(cursor_program, fs_cursor);
+                gl::BindAttribLocation(cursor_program, 0, std::ffi::CString::new("aPos").unwrap().as_ptr());
+                gl::BindAttribLocation(cursor_program, 1, std::ffi::CString::new("aTex").unwrap().as_ptr());
+                gl::LinkProgram(cursor_program);
+                state.gl_cursor_program = Some(cursor_program as u32);
+                gl::DeleteShader(fs_cursor);
                 gl::DeleteShader(vs);
             }
         }
@@ -64,14 +78,16 @@ pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem])
         gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
 
         for item in surfaces {
-            if let Some(prog) = state.gl_program {
-                gl::UseProgram(prog);
-            }
-
             if item.is_cursor() {
+                if let Some(prog) = state.gl_cursor_program {
+                    gl::UseProgram(prog);
+                }
                 gl::Enable(gl::BLEND);
                 gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
             } else {
+                if let Some(prog) = state.gl_program {
+                    gl::UseProgram(prog);
+                }
                 gl::Disable(gl::BLEND);
             }
 
@@ -209,6 +225,7 @@ pub struct AndroidSmithayState {
     pub egl_config: Option<egl::EGLConfig>,
     pub egl_lib: Option<Library>,
     pub gl_program: Option<u32>,
+    pub gl_cursor_program: Option<u32>,
     pub surface_size: (i32, i32),
     /// Safe-area top inset: camera notch / status bar height in pixels.
     /// Touch Y coordinates must be offset by this before routing.
@@ -242,6 +259,7 @@ impl AndroidSmithayState {
             egl_config: None,
             egl_lib: None,
             gl_program: None,
+            gl_cursor_program: None,
             surface_size: (0, 0),
             y_offset: 0,
             physical_size_mm: (155, 87),
@@ -334,6 +352,10 @@ fn release_native_window_inner(state: &mut AndroidSmithayState) {
             if let Some(prog) = state.gl_program {
                 gl::DeleteProgram(prog);
                 state.gl_program = None;
+            }
+            if let Some(prog) = state.gl_cursor_program {
+                gl::DeleteProgram(prog);
+                state.gl_cursor_program = None;
             }
 
             if let Some(surface) = state.egl_surface.take() {
@@ -512,7 +534,8 @@ pub fn bind_native_window(state: &mut AndroidSmithayState, native_window_ptr: *m
 
     if state.gl_program.is_none() {
         let vs_src = "attribute vec2 aPos; attribute vec2 aTex; varying vec2 vTex; void main(){ vTex=aTex; gl_Position=vec4(aPos,0.0,1.0); }";
-            let fs_src = "precision mediump float; varying vec2 vTex; uniform sampler2D uTex; void main(){ vec4 c=texture2D(uTex,vTex); gl_FragColor=vec4(c.b,c.g,c.r,1.0); }";
+        let fs_src = "precision mediump float; varying vec2 vTex; uniform sampler2D uTex; void main(){ vec4 c=texture2D(uTex,vTex); gl_FragColor=vec4(c.b,c.g,c.r,1.0); }";
+        let fs_cursor_src = "precision mediump float; varying vec2 vTex; uniform sampler2D uTex; void main(){ vec4 c=texture2D(uTex,vTex); gl_FragColor=vec4(c.b,c.g,c.r,c.a); }";
 
         unsafe {
             let vs = gl::CreateShader(gl::VERTEX_SHADER);
@@ -532,6 +555,19 @@ pub fn bind_native_window(state: &mut AndroidSmithayState, native_window_ptr: *m
             gl::LinkProgram(program);
             state.gl_program = Some(program as u32);
             gl::DeleteShader(fs);
+
+            let fs_cursor = gl::CreateShader(gl::FRAGMENT_SHADER);
+            let c_fs_cursor = std::ffi::CString::new(fs_cursor_src).unwrap();
+            gl::ShaderSource(fs_cursor, 1, &c_fs_cursor.as_ptr(), std::ptr::null());
+            gl::CompileShader(fs_cursor);
+            let cursor_program = gl::CreateProgram();
+            gl::AttachShader(cursor_program, vs);
+            gl::AttachShader(cursor_program, fs_cursor);
+            gl::BindAttribLocation(cursor_program, 0, std::ffi::CString::new("aPos").unwrap().as_ptr());
+            gl::BindAttribLocation(cursor_program, 1, std::ffi::CString::new("aTex").unwrap().as_ptr());
+            gl::LinkProgram(cursor_program);
+            state.gl_cursor_program = Some(cursor_program as u32);
+            gl::DeleteShader(fs_cursor);
             gl::DeleteShader(vs);
         }
     }
