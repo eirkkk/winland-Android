@@ -498,22 +498,24 @@ class DisplayActivity : ComponentActivity() {
                                             val socketReady = waitForWaylandSocket(context.getUnifiedFilesDir().let { java.io.File(it) })
                                             
                                             if (socketReady) {
-                                                Log.i("WinlandDiag", "Guest Start: Socket detected! Booting Linux desktop ($distroId)...")
-                                                val res = ChrootInstaller.startChroot(context, distroId, context.resources.displayMetrics.density)
-                                                if (res.isFailure) {
-                                                    val err = res.exceptionOrNull()
-                                                    Log.e("WinlandDiag", "Guest Start: FAILED - ${err?.message}")
-                                                    withContext(Dispatchers.Main) {
-                                                        Toast.makeText(context, "Linux Start Failed: ${err?.message}", Toast.LENGTH_LONG).show()
+                                                // Check if desktop Wayland clients are already connected
+                                                // (compositor thread persisted across Activity restarts).
+                                                // If so, skip startChroot — the existing desktop session is still alive.
+                                                val clientsConnected = NativeBridge.areClientsConnected()
+                                                if (clientsConnected) {
+                                                    Log.i("WinlandDiag", "Guest Start: Wayland clients already connected, desktop is running — skipping startChroot")
+                                                } else {
+                                                    Log.i("WinlandDiag", "Guest Start: Socket detected! Booting Linux desktop ($distroId)...")
+                                                    val res = ChrootInstaller.startChroot(context, distroId, context.resources.displayMetrics.density)
+                                                    if (res.isFailure) {
+                                                        val err = res.exceptionOrNull()
+                                                        Log.e("WinlandDiag", "Guest Start: FAILED - ${err?.message}")
+                                                        withContext(Dispatchers.Main) {
+                                                            Toast.makeText(context, "Linux Start Failed: ${err?.message}", Toast.LENGTH_LONG).show()
+                                                        }
                                                     }
                                                 }
                                             } else {
-                                                Log.e("WinlandDiag", "Guest Start: ABORTED - Wayland socket timeout")
-                                                didRequestGuestStart.set(false)
-                                                withContext(Dispatchers.Main) {
-                                                    Toast.makeText(context, "Graphics Bridge Timeout", Toast.LENGTH_LONG).show()
-                                                }
-                                            }
                                         }
                                     }
 

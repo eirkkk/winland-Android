@@ -113,6 +113,7 @@ object NativeBridge {
     external fun sendClipboardTextToWayland(text: String)
     external fun suspendRendering()
     external fun resumeRendering()
+    external fun areClientsConnected(): Boolean
     external fun sendTouchEvent(action: Int, id: Int, x: Float, y: Float)
     external fun sendKeyEvent(keycode: Int, isDown: Boolean)
     external fun sendTextInput(text: String)

@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::sync::{RwLock, OnceLock};
 
@@ -94,6 +94,20 @@ pub fn send_command(cmd: JniCommand) -> bool {
 /// Check whether the command channel is initialized.
 pub fn is_initialized() -> bool {
     COMMAND_TX.get().is_some()
+}
+
+/// Cached flag: whether any Wayland clients are currently connected to the compositor.
+/// Updated by the compositor thread each frame (no channel round-trip needed for reads).
+static CLIENTS_CONNECTED: AtomicBool = AtomicBool::new(false);
+
+/// Set the client-connected flag (called from compositor thread).
+pub fn set_clients_connected(connected: bool) {
+    CLIENTS_CONNECTED.store(connected, Ordering::Relaxed);
+}
+
+/// Read whether clients are connected (called from JNI / main thread).
+pub fn are_clients_connected() -> bool {
+    CLIENTS_CONNECTED.load(Ordering::Relaxed)
 }
 
 // ── Runtime stats cache ───────────────────────────────────────────────────────

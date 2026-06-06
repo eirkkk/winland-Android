@@ -288,6 +288,28 @@ impl WaylandServer {
         log::info!("XWayland: connected to display :{}", display_num);
     }
 
+    pub fn disconnect_all_clients(&mut self) {
+        let handle = self.display.backend().handle();
+        let ids: Vec<ClientId> = {
+            let mut ids = Vec::new();
+            handle.with_all_clients(|id| ids.push(id));
+            ids
+        };
+        if !ids.is_empty() {
+            log::info!("SmithayRuntime: disconnecting {} client(s)", ids.len());
+            for id in &ids {
+                handle.kill_client(id.clone(), DisconnectReason::ConnectionClosed);
+            }
+        }
+    }
+
+    pub fn connected_client_count(&mut self) -> usize {
+        let handle = self.display.backend().handle();
+        let mut count = 0;
+        handle.with_all_clients(|_| count += 1);
+        count
+    }
+
     pub fn pump(&mut self) {
         let socket_present = fs::symlink_metadata(&self.socket_path)
             .map(|metadata| metadata.file_type().is_socket())

@@ -179,6 +179,17 @@ pub(crate) fn get_latest_error() -> Option<String> {
     }
 }
 
+/// JNI entry point for checking if Wayland clients are connected.
+/// Returns 1 if at least one client is connected, 0 otherwise.
+/// Reads a cached value updated by the compositor each frame (no channel round-trip).
+#[no_mangle]
+pub unsafe extern "system" fn Java_com_winland_server_NativeBridge_areClientsConnected(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    jboolean::from(crate::android::command_channel::are_clients_connected())
+}
+
 #[cfg(all(test, feature = "smithay_android"))]
 mod tests {
     use super::*;

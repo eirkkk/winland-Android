@@ -200,6 +200,9 @@ pub fn spawn() -> Result<(), String> {
                         crate::android::command_channel::set_physical_size(backend_state.physical_size_mm.0, backend_state.physical_size_mm.1);
                     }
                     JniCommand::BindNativeWindow { native_window, response } => {
+                        if let Some(server) = wayland_server.as_mut() {
+                            server.disconnect_all_clients();
+                        }
                         let ptr = native_window.0 as *mut ndk_sys::ANativeWindow;
                         let result = crate::android::backend::smithay_backend::bind_native_window(&mut backend_state, ptr);
                         if result.is_ok() {
@@ -300,6 +303,7 @@ pub fn spawn() -> Result<(), String> {
 
             if let Some(server) = wayland_server.as_mut() {
                 server.pump();
+                crate::android::command_channel::set_clients_connected(server.connected_client_count() > 0);
                 server.runtime.render_all();
             }
             flush_deferred_composite(&mut backend_state, &render_rx);
