@@ -1,6 +1,6 @@
 use crate::android::backend::wayland::engine_timing;
 #[cfg(feature = "smithay_android")]
-use crate::android::backend::wayland::input::{RoutedInputEvent, TouchPoint};
+use crate::android::backend::wayland::input::{InputRouter, RoutedInputEvent, TouchPoint};
 #[cfg(feature = "smithay_android")]
 use smithay::backend::input::{Axis, AxisSource, ButtonState, KeyState};
 #[cfg(feature = "smithay_android")]
@@ -157,6 +157,26 @@ impl AndroidSeatRuntime {
         if self.focused_surface.is_none() {
             let _ = self.apply_forced_focus(reason);
         }
+    }
+
+    pub(crate) fn clear_input_state(&mut self) {
+        self.active_touch_ids.clear();
+        self.swipe_starts.clear();
+        self.swipe_cycle_armed = false;
+        self.last_window_cycle_ms = 0;
+        self.gesture_target = None;
+        self.gesture_surface = None;
+        self.gesture_origin = (0.0, 0.0);
+        self.pending_compositor_move = false;
+        self.trackpad_anchor = None;
+        self.trackpad_moved = false;
+        self.trackpad_dragging = false;
+        self.trackpad_tap_fingers.clear();
+        self.trackpad_hold_start_ms = 0;
+        self.popup_grab_active = false;
+        self.popup_grab_surface = None;
+        self.primary_touch_id = None;
+        log::info!("SmithayRuntime: input state cleared");
     }
 
     pub(crate) fn update_modifier_state_from_android_key(&mut self, keycode: i32, is_down: bool) -> bool {

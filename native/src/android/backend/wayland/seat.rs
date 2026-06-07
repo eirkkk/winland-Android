@@ -34,8 +34,6 @@ use smithay::utils::Logical;
 #[cfg(feature = "smithay_android")]
 use smithay::utils::Point;
 #[cfg(feature = "smithay_android")]
-use smithay::utils::Rectangle as SmithayRectangle;
-#[cfg(feature = "smithay_android")]
 use smithay::utils::Transform;
 #[cfg(feature = "smithay_android")]
 use smithay::utils::{Serial, SERIAL_COUNTER};
@@ -1003,27 +1001,40 @@ impl AndroidSeatRuntime {
     ) -> Option<RenderItem> {
         use smithay::backend::allocator::Buffer;
         use smithay::wayland::dmabuf::get_dmabuf;
-        use std::os::fd::AsRawFd;
+        use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
         let dmabuf = get_dmabuf(buffer).ok()?;
-        let handle = dmabuf.handles().next()?;
-        let width = dmabuf.width() as usize;
-        let height = dmabuf.height() as usize;
-        let stride = dmabuf.strides().next()? as usize;
-        let offset = dmabuf.offsets().next().unwrap_or(0) as usize;
-        let fd = handle.as_raw_fd();
+        let fd = dmabuf.handles().next()?;
+        let fourcc = dmabuf.format().code as u32;
+        let modifier: u64 = dmabuf.format().modifier.into();
+        let width = dmabuf.width() as i32;
+        let height = dmabuf.height() as i32;
+        let stride = dmabuf.strides().next()?;
+        let offset = dmabuf.offsets().next().unwrap_or(0);
 
-        let pixels = Self::try_read_dmabuf_via_mmap(fd, offset, stride, width, height)
-            .or_else(|| Self::try_read_dmabuf_via_pread(fd, offset, stride, width, height))?;
+        let duped = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_DUPFD, 0) };
+        if duped < 0 {
+            log::warn!("dmabuf dup failed fd={}", fd.as_raw_fd());
+            return None;
+        }
+        unsafe { libc::fcntl(duped, libc::F_SETFD, libc::FD_CLOEXEC); }
+        let owned_fd = unsafe { OwnedFd::from_raw_fd(duped) };
 
-        log::info!("dmabuf read OK fd={} {}x{} stride={} offset={}", fd, width, height, stride, offset);
+        log::info!(
+            "dmabuf render_item created fd={} fourcc=0x{:x} modifier=0x{:x} {}x{} stride={} offset={}",
+            owned_fd.as_raw_fd(), fourcc, modifier, width, height, stride, offset
+        );
 
-        Some(RenderItem::Shm {
-            pixels,
+        Some(RenderItem::DmaBuf {
+            fd: owned_fd,
+            fourcc,
+            modifier,
+            offset,
+            stride,
+            width,
+            height,
             x,
             y,
-            width: width as i32,
-            height: height as i32,
             scale,
             is_cursor,
         })

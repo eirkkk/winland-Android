@@ -3,6 +3,7 @@ package com.winland.server
 import android.util.Log
 import android.view.Surface
 import dalvik.system.BaseDexClassLoader
+import com.winland.server.utils.getUnifiedFilesDir
 
 object NativeBridge {
     private const val TAG = "NativeBridge"
@@ -180,5 +181,39 @@ object NativeBridge {
     @JvmStatic
     fun onWaylandHideSoftKeyboard() {
         DisplayActivity.hideSoftKeyboard()
+    }
+
+    // ── Persistent session flag ──────────────────────────────────────────
+    // Survives process kills. Written by ChrootInstaller, read by DisplayActivity.
+    private const val SESSION_FLAG_NAME = ".session_active"
+
+    private fun sessionFlagFile(context: android.content.Context): java.io.File {
+        return java.io.File(context.getUnifiedFilesDir(), SESSION_FLAG_NAME)
+    }
+
+    fun markSessionActive(context: android.content.Context) {
+        try {
+            sessionFlagFile(context).writeText("1")
+            Log.i(TAG, "Session flag: active")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to write session flag", e)
+        }
+    }
+
+    fun markSessionInactive(context: android.content.Context) {
+        try {
+            sessionFlagFile(context).delete()
+            Log.i(TAG, "Session flag: cleared")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to clear session flag", e)
+        }
+    }
+
+    fun wasSessionActive(context: android.content.Context): Boolean {
+        return try {
+            sessionFlagFile(context).readText().trim() == "1"
+        } catch (_: Exception) {
+            false
+        }
     }
 }

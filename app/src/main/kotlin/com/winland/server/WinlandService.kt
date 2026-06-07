@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -23,6 +24,7 @@ class WinlandService : LifecycleService() {
     private val TAG = "WinlandService"
     private val audioServer = WinlandAudioServer()
     private lateinit var cameraBridge: WinlandCameraBridge
+    private var wakeLock: PowerManager.WakeLock? = null
 
     @Volatile
     private var runtimeStarted = false
@@ -71,6 +73,9 @@ class WinlandService : LifecycleService() {
                 startForeground(1, notification)
             }
 
+            // Acquire partial wake lock to keep the process alive across Activity restarts.
+            acquireWakeLock()
+
             // Start Wayland compositor (socket wayland-0) immediately, independent of any Activity.
             // This ensures the socket survives Activity lifecycle changes (pause/resume/rotate).
             val ok = NativeBridge.ensureSocketRuntime(this)
@@ -118,8 +123,29 @@ class WinlandService : LifecycleService() {
         return null
     }
 
+    private fun acquireWakeLock() {
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "WinlandService:CompositorLock"
+            )
+            wakeLock?.acquire()
+            Log.i(TAG, "Wake lock acquired")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acquire wake lock", e)
+        }
+    }
+
     override fun onDestroy() {
         traceLifecycle("onDestroy") {
+            // Release wake lock
+            try {
+                wakeLock?.release()
+                wakeLock = null
+                Log.i(TAG, "Wake lock released")
+            } catch (_: Exception) {}
+
             // Full teardown: stop compositor thread, unbind socket, release native resources.
             // This is a true service shutdown — not a freeze.
             NativeBridge.releaseWaylandConnection()

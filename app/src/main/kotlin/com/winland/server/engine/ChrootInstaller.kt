@@ -355,11 +355,15 @@ object ChrootInstaller {
         )
 
         return try {
-            executeRootCommand(
+            val result = executeRootCommand(
                 command = bootScript,
                 timeoutMinutes = 30,
                 operation = "startChroot"
             )
+            if (result.isSuccess) {
+                NativeBridge.markSessionActive(context)
+            }
+            result
         } finally {
             isBootingOrRunning.set(false)
         }
@@ -378,6 +382,9 @@ object ChrootInstaller {
             operation = "stopChroot"
         )
         isBootingOrRunning.set(false)
+        if (result.isSuccess) {
+            NativeBridge.markSessionInactive(context)
+        }
         return result
     }
 
