@@ -5,19 +5,31 @@ pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem])
     if surfaces.is_empty() {
         return;
     }
+
+    let n_shm = surfaces.iter().filter(|s| matches!(s, RenderItem::Shm { .. })).count();
+    let n_dmabuf = surfaces.iter().filter(|s| matches!(s, RenderItem::DmaBuf { .. })).count();
+    log::info!("composite_multi: {} surfaces ({} SHM, {} DMA-BUF), render_active={}",
+        surfaces.len(), n_shm, n_dmabuf,
+        crate::android::backend::wayland::engine_timing::is_rendering_active());
+
     if !crate::android::backend::wayland::engine_timing::is_rendering_active() {
+        log::warn!("composite_multi: rendering not active, skipping");
         return;
     }
 
     let (display, surface, context, physical_sw, physical_sh, logical_sw, logical_sh) = {
         let (display, surface, context) = match (state.egl_display, state.egl_surface, state.egl_context) {
             (Some(d), Some(s), Some(c)) => (d, s, c),
-            _ => return,
+            _ => {
+                log::warn!("composite_multi: egl_display/surface/context not ready");
+                return;
+            }
         };
 
         let physical_sw = state.surface_size.0 as f32;
         let physical_sh = state.surface_size.1 as f32;
         if physical_sw <= 0.0 || physical_sh <= 0.0 {
+            log::warn!("composite_multi: surface_size {}x{} invalid", state.surface_size.0, state.surface_size.1);
             return;
         }
         let scale = state.current_scale.max(0.1);
@@ -69,8 +81,12 @@ pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem])
 
     unsafe {
         if eglMakeCurrent(display, surface, surface, context) == egl::FALSE {
+            log::warn!("composite_multi: eglMakeCurrent failed (egl_error=0x{:x})", eglGetError());
             return;
         }
+
+        log::info!("composite_multi: eglMakeCurrent OK, viewport {}x{}",
+            physical_sw as i32, physical_sh as i32);
 
         gl::Viewport(0, 0, physical_sw as i32, physical_sh as i32);
         gl::ClearColor(0.12, 0.12, 0.18, 1.0);
@@ -78,14 +94,25 @@ pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem])
         gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
 
         for item in surfaces {
+            let is_dmabuf = matches!(item, RenderItem::DmaBuf { .. });
             if item.is_cursor() {
-                if let Some(prog) = state.gl_cursor_program {
+                let prog = if is_dmabuf {
+                    state.gl_cursor_dmabuf_program
+                } else {
+                    state.gl_cursor_program
+                };
+                if let Some(prog) = prog {
                     gl::UseProgram(prog);
                 }
                 gl::Enable(gl::BLEND);
                 gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
             } else {
-                if let Some(prog) = state.gl_program {
+                let prog = if is_dmabuf {
+                    state.gl_dmabuf_program
+                } else {
+                    state.gl_program
+                };
+                if let Some(prog) = prog {
                     gl::UseProgram(prog);
                 }
                 gl::Disable(gl::BLEND);
@@ -93,6 +120,7 @@ pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem])
 
             let (_item_w, _item_h, item_x, item_y, item_scale) = match *item {
                 RenderItem::Shm { width, height, x, y, scale, .. } => (width, height, x, y, scale),
+                RenderItem::DmaBuf { width, height, x, y, scale, .. } => (width, height, x, y, scale),
             };
 
             match *item {
@@ -109,6 +137,10 @@ pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem])
                         width, height, 0, gl::RGBA, gl::UNSIGNED_BYTE,
                         pixels.as_ptr() as *const std::ffi::c_void,
                     );
+                    let gle = gl::GetError();
+                    if gle != gl::NO_ERROR {
+                        log::warn!("SHM: glTexImage2D error=0x{:x} ({}x{})", gle, width, height);
+                    }
 
                     let logical_w = width as f32 / item_scale;
                     let logical_h = height as f32 / item_scale;
@@ -130,6 +162,83 @@ pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem])
                     gl::EnableVertexAttribArray(1);
                     gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, stride, verts.as_ptr().add(2) as *const std::ffi::c_void);
                     gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
+                    let gle2 = gl::GetError();
+                    if gle2 != gl::NO_ERROR {
+                        log::warn!("SHM: glDrawArrays error=0x{:x} ({}x{} x0={} y0={})", gle2, width, height, x0, y0);
+                    }
+                    gl::DisableVertexAttribArray(0);
+                    gl::DisableVertexAttribArray(1);
+                    gl::DeleteTextures(1, &tex);
+                }
+                RenderItem::DmaBuf { ref fd, fourcc, modifier, offset, stride, width, height, .. } => {
+                    let (Some(create_image), Some(destroy_image), Some(target_texture)) =
+                        (state.egl_create_image_khr, state.egl_destroy_image_khr, state.gl_egl_image_target_texture_2d_oes)
+                    else {
+                        log::warn!("DmaBuf: EGL image extension not loaded, skipping");
+                        continue;
+                    };
+
+                    let fourcc_val = fourcc as i32;
+                    let is_valid_modifier = modifier != 0 && modifier != 0x00FFFFFFFFFFFFFF;
+                    let has_mods = state.has_dmabuf_import_modifiers && is_valid_modifier;
+                    let attribs = if has_mods {
+                        vec![
+                            EGL_LINUX_DRM_FOURCC_EXT, fourcc_val,
+                            EGL_DMA_BUF_PLANE0_FD_EXT, fd.as_raw_fd() as i32,
+                            EGL_DMA_BUF_PLANE0_OFFSET_EXT, offset as i32,
+                            EGL_DMA_BUF_PLANE0_PITCH_EXT, stride as i32,
+                            EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier as i32,
+                            EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, (modifier >> 32) as i32,
+                            EGL_IMAGE_PRESERVED_KHR, 1,
+                            EGL_NONE,
+                        ]
+                    } else {
+                        vec![
+                            EGL_LINUX_DRM_FOURCC_EXT, fourcc_val,
+                            EGL_DMA_BUF_PLANE0_FD_EXT, fd.as_raw_fd() as i32,
+                            EGL_DMA_BUF_PLANE0_OFFSET_EXT, offset as i32,
+                            EGL_DMA_BUF_PLANE0_PITCH_EXT, stride as i32,
+                            EGL_IMAGE_PRESERVED_KHR, 1,
+                            EGL_NONE,
+                        ]
+                    };
+
+                    let egl_img = create_image(display, std::ptr::null_mut(), EGL_LINUX_DMA_BUF_EXT, std::ptr::null_mut(), attribs.as_ptr());
+                    if egl_img.is_null() {
+                        log::warn!("DmaBuf: eglCreateImageKHR failed (fourcc=0x{:x} {}x{})", fourcc, width, height);
+                        continue;
+                    }
+
+                    let mut tex: gl::types::GLuint = 0;
+                    gl::GenTextures(1, &mut tex);
+                    gl::BindTexture(gl::TEXTURE_2D, tex);
+                    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::types::GLint);
+                    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::types::GLint);
+                    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as gl::types::GLint);
+                    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as gl::types::GLint);
+                    target_texture(gl::TEXTURE_2D, egl_img);
+                    destroy_image(display, egl_img);
+
+                    let logical_w = width as f32 / item_scale;
+                    let logical_h = height as f32 / item_scale;
+                    let x0 = (item_x as f32 / logical_sw) * 2.0 - 1.0;
+                    let y0 = 1.0 - (item_y as f32 / logical_sh) * 2.0;
+                    let x1 = ((item_x as f32 + logical_w) / logical_sw) * 2.0 - 1.0;
+                    let y1 = 1.0 - ((item_y as f32 + logical_h) / logical_sh) * 2.0;
+
+                    let verts: [f32; 16] = [
+                        x0, y1, 0.0, 1.0,
+                        x1, y1, 1.0, 1.0,
+                        x0, y0, 0.0, 0.0,
+                        x1, y0, 1.0, 0.0,
+                    ];
+
+                    let vert_stride = (4 * std::mem::size_of::<f32>()) as i32;
+                    gl::EnableVertexAttribArray(0);
+                    gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, vert_stride, verts.as_ptr() as *const std::ffi::c_void);
+                    gl::EnableVertexAttribArray(1);
+                    gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, vert_stride, verts.as_ptr().add(2) as *const std::ffi::c_void);
+                    gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
                     gl::DisableVertexAttribArray(0);
                     gl::DisableVertexAttribArray(1);
                     gl::DeleteTextures(1, &tex);
@@ -139,11 +248,13 @@ pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem])
 
         gl::UseProgram(0);
 
-        eglSwapBuffers(display, surface);
+        let swap_ok = eglSwapBuffers(display, surface);
+        log::info!("composite_multi: eglSwapBuffers -> {} (egl_error=0x{:x})", swap_ok, eglGetError());
         let _ = eglMakeCurrent(display, egl::NO_SURFACE, egl::NO_SURFACE, egl::NO_CONTEXT);
     }
 
     state.frames_presented += 1;
+    log::info!("composite_multi: done, frames_presented={}", state.frames_presented);
 }
 
 pub fn render_background_tick(state: &AndroidSmithayState) {
@@ -183,6 +294,17 @@ use std::os::fd::{AsRawFd, OwnedFd};
 
 const EGL_NONE: i32 = 0x3038;
 const EGL_EXTENSIONS: i32 = 0x3055;
+const EGL_LINUX_DMA_BUF_EXT: i32 = 0x3270;
+const EGL_LINUX_DRM_FOURCC_EXT: i32 = 0x3271;
+const EGL_DMA_BUF_PLANE0_FD_EXT: i32 = 0x3272;
+const EGL_DMA_BUF_PLANE0_OFFSET_EXT: i32 = 0x3273;
+const EGL_DMA_BUF_PLANE0_PITCH_EXT: i32 = 0x3274;
+const EGL_IMAGE_PRESERVED_KHR: i32 = 0x30D2;
+const EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT: i32 = 0x3444;
+const EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT: i32 = 0x3445;
+
+type EglCreateImageKHR = unsafe extern "C" fn(egl::EGLDisplay, egl::EGLContext, i32, *mut std::ffi::c_void, *const i32) -> *mut std::ffi::c_void;
+type EglDestroyImageKHR = unsafe extern "C" fn(egl::EGLDisplay, *mut std::ffi::c_void) -> i32;
 
 #[link(name = "EGL")]
 #[allow(dead_code)]
@@ -247,6 +369,16 @@ pub struct AndroidSmithayState {
     pub current_scale: f32,
     /// Whether EGL_EXT_image_dma_buf_import is available on this device
     pub has_dmabuf_import: bool,
+    /// Whether EGL_EXT_image_dma_buf_import_modifiers is available on this device
+    pub has_dmabuf_import_modifiers: bool,
+    /// EGL_EXT_image_dma_buf_import function pointers
+    pub egl_create_image_khr: Option<EglCreateImageKHR>,
+    pub egl_destroy_image_khr: Option<EglDestroyImageKHR>,
+    /// GL_OES_EGL_image function pointer
+    pub gl_egl_image_target_texture_2d_oes: Option<unsafe extern "C" fn(gl::types::GLenum, *mut std::ffi::c_void)>,
+    /// Fragment shader for DMA-BUF textures (no BGR swap)
+    pub gl_dmabuf_program: Option<u32>,
+    pub gl_cursor_dmabuf_program: Option<u32>,
 }
 
 impl AndroidSmithayState {
@@ -272,6 +404,12 @@ impl AndroidSmithayState {
             requested_scale: None,
             current_scale: 1.0,
             has_dmabuf_import: false,
+            has_dmabuf_import_modifiers: false,
+            egl_create_image_khr: None,
+            egl_destroy_image_khr: None,
+            gl_egl_image_target_texture_2d_oes: None,
+            gl_dmabuf_program: None,
+            gl_cursor_dmabuf_program: None,
         }
     }
 }
@@ -289,12 +427,26 @@ pub(crate) enum RenderItem {
         scale: f32,
         is_cursor: bool,
     },
+    DmaBuf {
+        fd: OwnedFd,
+        fourcc: u32,
+        modifier: u64,
+        offset: u32,
+        stride: u32,
+        width: i32,
+        height: i32,
+        x: i32,
+        y: i32,
+        scale: f32,
+        is_cursor: bool,
+    },
 }
 
 impl RenderItem {
     pub fn is_cursor(&self) -> bool {
         match self {
             RenderItem::Shm { is_cursor, .. } => *is_cursor,
+            RenderItem::DmaBuf { is_cursor, .. } => *is_cursor,
         }
     }
 }
@@ -356,6 +508,14 @@ fn release_native_window_inner(state: &mut AndroidSmithayState) {
             if let Some(prog) = state.gl_cursor_program {
                 gl::DeleteProgram(prog);
                 state.gl_cursor_program = None;
+            }
+            if let Some(prog) = state.gl_dmabuf_program {
+                gl::DeleteProgram(prog);
+                state.gl_dmabuf_program = None;
+            }
+            if let Some(prog) = state.gl_cursor_dmabuf_program {
+                gl::DeleteProgram(prog);
+                state.gl_cursor_dmabuf_program = None;
             }
 
             if let Some(surface) = state.egl_surface.take() {
@@ -455,10 +615,39 @@ pub fn bind_native_window(state: &mut AndroidSmithayState, native_window_ptr: *m
         }
     };
     let has_dmabuf = egl_extensions.contains("EGL_EXT_image_dma_buf_import");
+    let has_dmabuf_mods = egl_extensions.contains("EGL_EXT_image_dma_buf_import_modifiers");
     let snippet = if egl_extensions.len() > 200 { &egl_extensions[..200] } else { &egl_extensions[..] };
-    log::info!("EGL has_dmabuf_import={} extensions={}",
-               has_dmabuf, snippet);
+    log::info!("EGL has_dmabuf_import={} has_dmabuf_modifiers={} extensions={}",
+               has_dmabuf, has_dmabuf_mods, snippet);
     state.has_dmabuf_import = has_dmabuf;
+    state.has_dmabuf_import_modifiers = has_dmabuf_mods;
+
+    // Load EGL extension function pointers for DMA-BUF import
+    if has_dmabuf {
+        unsafe {
+            let create_name = std::ffi::CString::new("eglCreateImageKHR").unwrap();
+            let create_ptr = eglGetProcAddress(create_name.as_ptr());
+            if !create_ptr.is_null() {
+                state.egl_create_image_khr = Some(std::mem::transmute::<_, EglCreateImageKHR>(create_ptr));
+            }
+            let destroy_name = std::ffi::CString::new("eglDestroyImageKHR").unwrap();
+            let destroy_ptr = eglGetProcAddress(destroy_name.as_ptr());
+            if !destroy_ptr.is_null() {
+                state.egl_destroy_image_khr = Some(std::mem::transmute::<_, EglDestroyImageKHR>(destroy_ptr));
+            }
+        }
+    }
+
+    // Load GL_OES_EGL_image extension
+    {
+        let name = std::ffi::CString::new("glEGLImageTargetTexture2DOES").unwrap();
+        let ptr = unsafe { eglGetProcAddress(name.as_ptr()) };
+        if !ptr.is_null() {
+            state.gl_egl_image_target_texture_2d_oes = Some(
+                unsafe { std::mem::transmute::<_, unsafe extern "C" fn(gl::types::GLenum, *mut std::ffi::c_void)>(ptr) }
+            );
+        }
+    }
 
     unsafe {
         ndk_sys::ANativeWindow_setBuffersGeometry(native_window_ptr, 0, 0, 2);
@@ -537,6 +726,10 @@ pub fn bind_native_window(state: &mut AndroidSmithayState, native_window_ptr: *m
         let fs_src = "precision mediump float; varying vec2 vTex; uniform sampler2D uTex; void main(){ vec4 c=texture2D(uTex,vTex); gl_FragColor=vec4(c.b,c.g,c.r,1.0); }";
         let fs_cursor_src = "precision mediump float; varying vec2 vTex; uniform sampler2D uTex; void main(){ vec4 c=texture2D(uTex,vTex); gl_FragColor=vec4(c.b,c.g,c.r,c.a); }";
 
+        // DMA-BUF textures are already in R,G,B,A order from EGL import (no BGR swap)
+        let fs_dmabuf_src = "precision mediump float; varying vec2 vTex; uniform sampler2D uTex; void main(){ vec4 c=texture2D(uTex,vTex); gl_FragColor=vec4(c.r,c.g,c.b,1.0); }";
+        let fs_cursor_dmabuf_src = "precision mediump float; varying vec2 vTex; uniform sampler2D uTex; void main(){ vec4 c=texture2D(uTex,vTex); gl_FragColor=vec4(c.r,c.g,c.b,c.a); }";
+
         unsafe {
             let vs = gl::CreateShader(gl::VERTEX_SHADER);
             let c_vs = std::ffi::CString::new(vs_src).unwrap();
@@ -568,6 +761,34 @@ pub fn bind_native_window(state: &mut AndroidSmithayState, native_window_ptr: *m
             gl::LinkProgram(cursor_program);
             state.gl_cursor_program = Some(cursor_program as u32);
             gl::DeleteShader(fs_cursor);
+
+            // DMA-BUF shaders (no BGR swap)
+            let fs_dmabuf = gl::CreateShader(gl::FRAGMENT_SHADER);
+            let c_fs_dmabuf = std::ffi::CString::new(fs_dmabuf_src).unwrap();
+            gl::ShaderSource(fs_dmabuf, 1, &c_fs_dmabuf.as_ptr(), std::ptr::null());
+            gl::CompileShader(fs_dmabuf);
+            let dmabuf_program = gl::CreateProgram();
+            gl::AttachShader(dmabuf_program, vs);
+            gl::AttachShader(dmabuf_program, fs_dmabuf);
+            gl::BindAttribLocation(dmabuf_program, 0, std::ffi::CString::new("aPos").unwrap().as_ptr());
+            gl::BindAttribLocation(dmabuf_program, 1, std::ffi::CString::new("aTex").unwrap().as_ptr());
+            gl::LinkProgram(dmabuf_program);
+            state.gl_dmabuf_program = Some(dmabuf_program as u32);
+            gl::DeleteShader(fs_dmabuf);
+
+            let fs_cursor_dmabuf = gl::CreateShader(gl::FRAGMENT_SHADER);
+            let c_fs_cursor_dmabuf = std::ffi::CString::new(fs_cursor_dmabuf_src).unwrap();
+            gl::ShaderSource(fs_cursor_dmabuf, 1, &c_fs_cursor_dmabuf.as_ptr(), std::ptr::null());
+            gl::CompileShader(fs_cursor_dmabuf);
+            let cursor_dmabuf_program = gl::CreateProgram();
+            gl::AttachShader(cursor_dmabuf_program, vs);
+            gl::AttachShader(cursor_dmabuf_program, fs_cursor_dmabuf);
+            gl::BindAttribLocation(cursor_dmabuf_program, 0, std::ffi::CString::new("aPos").unwrap().as_ptr());
+            gl::BindAttribLocation(cursor_dmabuf_program, 1, std::ffi::CString::new("aTex").unwrap().as_ptr());
+            gl::LinkProgram(cursor_dmabuf_program);
+            state.gl_cursor_dmabuf_program = Some(cursor_dmabuf_program as u32);
+            gl::DeleteShader(fs_cursor_dmabuf);
+
             gl::DeleteShader(vs);
         }
     }

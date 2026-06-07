@@ -29,6 +29,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import kotlinx.coroutines.Job
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -412,126 +413,132 @@ class DisplayActivity : ComponentActivity() {
                 Log.i("WinlandDiag", "LinuxDisplay: AndroidView Factory invoked")
                 WaylandInputSurfaceView(context, ::releaseOneShotModifiers, { _ctrlActive.value }, { _altActive.value }).apply {
                     requestFocus()
-                    holder.addCallback(object : SurfaceHolder.Callback {
-                        override fun surfaceCreated(holder: SurfaceHolder) {
-                            Log.i("WinlandDiag", "surfaceCreated: Surface is ready")
-                            android.util.Log.i("DisplayActivity", "com.winland.server: surfaceCreated")
-                            
-                            // [Crystal Clear Fix]: Force RGBA_8888 for exact pixel mapping
-                            holder.setFormat(android.graphics.PixelFormat.RGBA_8888)
+                    setupLifecycle(this@DisplayActivity.lifecycleScope,
+                        onSurfaceCreated = { holder ->
+                            Log.i("WinlandDiag", "surfaceCreated: Surface is ready, starting native init")
 
-                            // Surface ready for rendering from native backend
-                            // Winland Fix: Use a delay to ensure Android Surface plumbing is fully settled 
-                            // before the heavy EGL thread binds to it. Prevents EGL_BAD_ACCESS on Adreno.
-                            lifecycleScope.launch(Dispatchers.Main) {
-                                delay(300)
-                                
-                                // --- [Winland OS: Secure Environment] ---
-                                // Note: Socket ownership and XKB permissions are now handled by 'winland-setup' or
-                                // the ChrootInstaller backend to prevent UI freezes and seccomp violations.
-                                
-                                if (!NativeBridge.isLoaded()) {
-                                    handleNativeInitFailure("Native libraries are not loaded")
-                                    return@launch
+                            if (!NativeBridge.isLoaded()) {
+                                handleNativeInitFailure("Native libraries are not loaded")
+                                return@setupLifecycle
+                            }
+
+                            // --- [Winland OS: Pre-flight Environment Validation] ---
+                            val status = withContext(Dispatchers.IO) {
+                                ChrootInstaller.getChrootStatus(context, distroId)
+                            }
+                            if (!status.ready) {
+                                val err = "Environment not ready: ${status.reason}"
+                                Log.e("DisplayActivity", err)
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, err, Toast.LENGTH_LONG).show()
                                 }
+                                handleNativeInitFailure(err)
+                                return@setupLifecycle
+                            }
 
-                                // --- [Winland OS: Pre-flight Environment Validation] ---
-                                val status = withContext(Dispatchers.IO) {
-                                    ChrootInstaller.getChrootStatus(context, distroId)
+
+                            if (isNativeBridgeInitialized) {
+                                Log.i("WinlandDiag", "NativeBridge already initialized, rebinding surface...")
+                                NativeBridge.rebindSurface(holder.surface)
+                                NativeBridge.resumeRendering()
+                                return@setupLifecycle
+                            }
+
+                            val nativeInitOk = withContext(Dispatchers.IO) {
+                                NativeBridge.initWaylandConnection(holder.surface, this@DisplayActivity)
+                            }
+                            isNativeBridgeInitialized = nativeInitOk
+                            Log.i("WinlandDiag", "NativeBridge.initWaylandConnection: result=$nativeInitOk")
+
+                            if (nativeInitOk) {
+                                val refreshRate = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                                    @Suppress("DEPRECATION")
+                                    display?.mode?.refreshRate ?: 60f
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    windowManager.defaultDisplay.refreshRate
                                 }
-                                if (!status.ready) {
-                                    val err = "Environment not ready: ${status.reason}"
-                                    Log.e("DisplayActivity", err)
-                                    withContext(Dispatchers.Main) {
-                                        Toast.makeText(context, err, Toast.LENGTH_LONG).show()
-                                    }
-                                    handleNativeInitFailure(err)
-                                    return@launch
-                                }
+                                NativeBridge.setRefreshRate(refreshRate)
+                                android.util.Log.i("DisplayActivity", "Configured native refresh rate: $refreshRate Hz")
+
+                                val prefs = context.getSharedPreferences("winland_settings", Context.MODE_PRIVATE)
+                                NativeBridge.setScrollSensitivity(prefs.getFloat("scroll_sensitivity", 1.0f))
+                                val inputPrefs = context.getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
+                                NativeBridge.setInputMode(inputPrefs.getInt("input_mode_mask", 1))
+                                NativeBridge.initAudioBridge()
 
 
-                                if (isNativeBridgeInitialized) {
-                                    Log.i("WinlandDiag", "NativeBridge already initialized, rebinding surface...")
-                                    NativeBridge.rebindSurface(holder.surface)
-                                    return@launch
-                                }
+                                if (didRequestGuestStart.compareAndSet(false, true)) {
+                                    lifecycleScope.launch(Dispatchers.IO) {
+                                        Log.i("WinlandDiag", "Guest Start: Waiting for Wayland socket probe...")
 
-                                val nativeInitOk = withContext(Dispatchers.IO) {
-                                    NativeBridge.initWaylandConnection(holder.surface, this@DisplayActivity)
-                                }
-                                isNativeBridgeInitialized = nativeInitOk
-                                Log.i("WinlandDiag", "NativeBridge.initWaylandConnection: result=$nativeInitOk")
-                                
-                                if (nativeInitOk) {
-                                    // Set refresh rate for smooth 120Hz sync
-                                    val refreshRate = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                                        @Suppress("DEPRECATION")
-                                        display?.mode?.refreshRate ?: 60f
-                                    } else {
-                                        @Suppress("DEPRECATION")
-                                        windowManager.defaultDisplay.refreshRate
-                                    }
-                                    NativeBridge.setRefreshRate(refreshRate)
-                                    android.util.Log.i("DisplayActivity", "Configured native refresh rate: $refreshRate Hz")
+                                        var waited = 0
+                                        while (!WinlandService.socketRuntimeReady && waited < 50) {
+                                            delay(100)
+                                            waited++
+                                        }
+                                        if (!WinlandService.socketRuntimeReady) {
+                                            Log.w("WinlandDiag", "Guest Start: Runtime not ready after 5s, probing anyway")
+                                        } else if (waited > 0) {
+                                            Log.i("WinlandDiag", "Guest Start: Compositor runtime ready after ${waited * 100}ms")
+                                        }
 
-                                    val prefs = context.getSharedPreferences("winland_settings", Context.MODE_PRIVATE)
-                                    NativeBridge.setScrollSensitivity(prefs.getFloat("scroll_sensitivity", 1.0f))
-                                    NativeBridge.initAudioBridge()
-                                    
+                                        val socketReady = waitForWaylandSocket(context.getUnifiedFilesDir().let { java.io.File(it) })
 
-                                    if (didRequestGuestStart.compareAndSet(false, true)) {
-                                        lifecycleScope.launch(Dispatchers.IO) {
-                                            Log.i("WinlandDiag", "Guest Start: Waiting for Wayland socket probe...")
+                                        if (socketReady) {
+                                            var clientsConnected = NativeBridge.areClientsConnected()
 
-                                            // Silent guard: ensure compositor thread has booted before probing
-                                            var waited = 0
-                                            while (!WinlandService.socketRuntimeReady && waited < 50) {
-                                                delay(100)
-                                                waited++
-                                            }
-                                            if (!WinlandService.socketRuntimeReady) {
-                                                Log.w("WinlandDiag", "Guest Start: Runtime not ready after 5s, probing anyway")
-                                            } else if (waited > 0) {
-                                                Log.i("WinlandDiag", "Guest Start: Compositor runtime ready after ${waited * 100}ms")
-                                            }
-
-                                            val socketReady = waitForWaylandSocket(context.getUnifiedFilesDir().let { java.io.File(it) })
-                                            
-                                            if (socketReady) {
-                                                // Check if desktop Wayland clients are already connected
-                                                // (compositor thread persisted across Activity restarts).
-                                                // If so, skip startChroot — the existing desktop session is still alive.
-                                                val clientsConnected = NativeBridge.areClientsConnected()
-                                                if (clientsConnected) {
-                                                    Log.i("WinlandDiag", "Guest Start: Wayland clients already connected, desktop is running — skipping startChroot")
-                                                } else {
-                                                    Log.i("WinlandDiag", "Guest Start: Socket detected! Booting Linux desktop ($distroId)...")
-                                                    val res = ChrootInstaller.startChroot(context, distroId, context.resources.displayMetrics.density)
-                                                    if (res.isFailure) {
-                                                        val err = res.exceptionOrNull()
-                                                        Log.e("WinlandDiag", "Guest Start: FAILED - ${err?.message}")
-                                                        withContext(Dispatchers.Main) {
-                                                            Toast.makeText(context, "Linux Start Failed: ${err?.message}", Toast.LENGTH_LONG).show()
-                                                        }
+                                            if (!clientsConnected && NativeBridge.wasSessionActive(context)) {
+                                                Log.i("WinlandDiag", "Guest Start: Persistent flag shows session was active, retrying client check...")
+                                                for (i in 1..5) {
+                                                    delay(500)
+                                                    clientsConnected = NativeBridge.areClientsConnected()
+                                                    if (clientsConnected) {
+                                                        Log.i("WinlandDiag", "Guest Start: Clients reconnected after ${i * 500}ms")
+                                                        break
                                                     }
                                                 }
+                                            }
+
+                                            if (clientsConnected) {
+                                                Log.i("WinlandDiag", "Guest Start: Wayland clients already connected, desktop is running — skipping startChroot")
                                             } else {
+                                                Log.i("WinlandDiag", "Guest Start: Socket detected! Booting Linux desktop ($distroId)...")
+                                                val res = ChrootInstaller.startChroot(context, distroId, context.resources.displayMetrics.density)
+                                                if (res.isFailure) {
+                                                    val err = res.exceptionOrNull()
+                                                    Log.e("WinlandDiag", "Guest Start: FAILED - ${err?.message}")
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(context, "Linux Start Failed: ${err?.message}", Toast.LENGTH_LONG).show()
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            Log.e("WinlandDiag", "Guest Start: ABORTED - Wayland socket timeout")
+                                            didRequestGuestStart.set(false)
+                                            withContext(Dispatchers.Main) {
+                                                Toast.makeText(context, "Graphics Bridge Timeout", Toast.LENGTH_LONG).show()
+                                            }
                                         }
                                     }
-
-                                    withContext(Dispatchers.Main) {
-                                        android.widget.Toast.makeText(context, "Wayland Engine Started", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
-                                } else {
-                                    handleNativeInitFailure("Failed to initialize Wayland native bridge")
                                 }
+
+                                withContext(Dispatchers.Main) {
+                                    android.widget.Toast.makeText(context, "Wayland Engine Started", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                handleNativeInitFailure("Failed to initialize Wayland native bridge")
                             }
-                        }
-                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                        },
+                        onSurfaceDestroyed = {
+                            runCatching {
+                                NativeBridge.suspendRendering()
+                            }.onFailure {
+                                Log.w("DisplayActivity", "Immediate suspendRendering failed in surfaceDestroyed", it)
+                            }
+                        },
+                        onSurfaceChanged = { _, format, width, height ->
                             android.util.Log.i("DisplayActivity", "com.winland.server: surfaceChanged format=$format width=$width height=$height")
-                            // Subtract camera cutout / status bar from height to get safe area
-                            // below the camera notch. This ensures the Linux desktop never overlaps
-                            // the punch-hole area.
                             val cutoutHeight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                                 val insets = window.decorView.rootWindowInsets
                                 if (insets != null) {
@@ -556,24 +563,9 @@ class DisplayActivity : ComponentActivity() {
                                     NativeBridge.setYOffset(cutoutHeight)
                                 }
                             }
-                            // Do NOT call initWaylandConnection here — surfaceCreated's coroutine
-                            // handles initialization after a 300ms settling delay. Calling it here
-                            // races with that coroutine (no delay), causing double EGL init.
                         }
-                        override fun surfaceDestroyed(holder: SurfaceHolder) {
-                            android.util.Log.w("DisplayActivity", "com.winland.server: surfaceDestroyed")
-                            // Direct call stops rendering immediately. No async fallback needed —
-                            // onStop() provides the lifecycle safety net.
-                            runCatching {
-                                NativeBridge.suspendRendering()
-                            }.onFailure {
-                                Log.w("DisplayActivity", "Immediate suspendRendering failed in surfaceDestroyed", it)
-                            }
-                            activeSurfaceView = null
-                        }
-                    })
-
-                    }
+                    )
+                }
                 },
             modifier = Modifier.fillMaxSize()
         )
@@ -666,7 +658,17 @@ class DisplayActivity : ComponentActivity() {
             isActivityForeground = true
             markAsCurrentActivity()
             setupClipboardListener()
-            setNativeRenderingActiveAsync(active = true)
+            // resumeRendering() is idempotent — it only flips RENDERING_ACTIVE to true.
+            // The compositor also checks egl_surface validity before actually drawing,
+            // so this is safe to call even if the EGL surface isn't ready yet.
+            // Needed here because surfaceCreated() does NOT always fire on resume
+            // (Android may keep the Surface alive during background). Without this,
+            // RENDERING_ACTIVE stays false from onStop() and the screen stays black.
+            runCatching {
+                NativeBridge.resumeRendering()
+            }.onFailure {
+                Log.w("DisplayActivity", "resumeRendering in onResume failed", it)
+            }
         }
     }
 
@@ -811,6 +813,7 @@ class DisplayActivity : ComponentActivity() {
             }
         }
         private var lastMoveDispatchUptimeMs: Long = 0L
+        private var surfaceJob: Job? = null
 
         private val mainHandler = android.os.Handler(context.mainLooper)
 
@@ -841,6 +844,40 @@ class DisplayActivity : ComponentActivity() {
             isFocusable = true
             isFocusableInTouchMode = true
             activeSurfaceView = this
+        }
+
+        fun setupLifecycle(
+            lifecycleScope: androidx.lifecycle.LifecycleCoroutineScope,
+            onSurfaceCreated: suspend (holder: SurfaceHolder) -> Unit,
+            onSurfaceChanged: (holder: SurfaceHolder, format: Int, width: Int, height: Int) -> Unit,
+            onSurfaceDestroyed: () -> Unit
+        ) {
+            holder.addCallback(object : SurfaceHolder.Callback {
+                override fun surfaceCreated(holder: SurfaceHolder) {
+                    Log.i("DisplayActivity", "com.winland.server: surfaceCreated (setupLifecycle)")
+                    activeSurfaceView = this@WaylandInputSurfaceView
+                    surfaceJob?.cancel()
+                    holder.setFormat(android.graphics.PixelFormat.RGBA_8888)
+                    surfaceJob = lifecycleScope.launch(Dispatchers.Main) {
+                        delay(300)
+                        if (!holder.surface.isValid) {
+                            Log.w("DisplayActivity", "surfaceCreated coroutine: Surface is no longer valid, skipping")
+                            return@launch
+                        }
+                        onSurfaceCreated(holder)
+                    }
+                }
+                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                    onSurfaceChanged(holder, format, width, height)
+                }
+                override fun surfaceDestroyed(holder: SurfaceHolder) {
+                    Log.w("DisplayActivity", "com.winland.server: surfaceDestroyed (setupLifecycle)")
+                    surfaceJob?.cancel()
+                    surfaceJob = null
+                    onSurfaceDestroyed()
+                    activeSurfaceView = null
+                }
+            })
         }
 
         @android.annotation.SuppressLint("ClickableViewAccessibility")

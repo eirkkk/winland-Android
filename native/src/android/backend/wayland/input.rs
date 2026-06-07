@@ -136,9 +136,15 @@ impl InputRouter {
 		self.active_touches.len()
 	}
 
-	pub fn pressed_key_count(&self) -> usize {
-		self.pressed_keys.len()
-	}
+    pub fn pressed_key_count(&self) -> usize {
+        self.pressed_keys.len()
+    }
+
+    pub fn clear(&mut self) {
+        self.active_touches.clear();
+        self.pressed_keys.clear();
+        self.last_multi_touch_centroid = None;
+    }
 }
 
 fn normalize_point(x: f32, y: f32, width: i32, height: i32) -> TouchPoint {

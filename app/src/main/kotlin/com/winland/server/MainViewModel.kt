@@ -109,7 +109,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun updateInputMode(mode: InputMode) {
         _inputMode.value = mode
         prefs.edit().putInt("input_mode_mask", mode.value).apply()
-        NativeBridge.setInputMode(mode.value)
+        if (NativeBridge.isLoaded()) {
+            NativeBridge.setInputMode(mode.value)
+        }
     }
 
     private val _terminalInput = MutableStateFlow("")

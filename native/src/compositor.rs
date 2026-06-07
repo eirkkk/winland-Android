@@ -200,13 +200,11 @@ pub fn spawn() -> Result<(), String> {
                         crate::android::command_channel::set_physical_size(backend_state.physical_size_mm.0, backend_state.physical_size_mm.1);
                     }
                     JniCommand::BindNativeWindow { native_window, response } => {
-                        if let Some(server) = wayland_server.as_mut() {
-                            server.disconnect_all_clients();
-                        }
                         let ptr = native_window.0 as *mut ndk_sys::ANativeWindow;
                         let result = crate::android::backend::smithay_backend::bind_native_window(&mut backend_state, ptr);
                         if result.is_ok() {
                             if let Some(server) = wayland_server.as_mut() {
+                                server.runtime.apply_forced_focus("resume");
                                 server.runtime.render_all();
                             }
                         }
@@ -240,6 +238,11 @@ pub fn spawn() -> Result<(), String> {
                     }
                     JniCommand::SuspendRendering => {
                         crate::android::backend::smithay_backend::suspend_native_window(&mut backend_state);
+                        if let Some(server) = wayland_server.as_mut() {
+                            server.runtime.clear_focused_surface();
+                            server.runtime.clear_input_state();
+                        }
+                        input_router.clear();
                     }
                     JniCommand::ResumeRendering => {}
                     JniCommand::SetResolution { width, height } => {
