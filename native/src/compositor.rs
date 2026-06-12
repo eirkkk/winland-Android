@@ -360,7 +360,12 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
                 crate::android::command_channel::set_runtime_stats(stats);
             }
 
-            thread::sleep(Duration::from_millis(16));
+            // Smart sleep: yield when clients are rendering, sleep when idle
+            if wayland_server.as_mut().map_or(false, |s| s.connected_client_count() > 0) {
+                std::thread::yield_now();
+            } else {
+                thread::sleep(Duration::from_millis(8));
+            }
         }
         log::info!("Compositor: runtime loop stopped");
     });

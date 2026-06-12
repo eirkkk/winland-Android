@@ -93,7 +93,7 @@ pub(crate) unsafe fn query_egl_dmabuf_formats(
         {
             formats.push(Format {
                 code,
-                modifier: Modifier::Invalid,
+                modifier: Modifier::Linear,
             });
             continue;
         }
