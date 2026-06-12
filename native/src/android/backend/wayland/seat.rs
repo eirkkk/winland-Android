@@ -302,34 +302,20 @@ impl AndroidSeatRuntime {
         });
         log::info!("SmithayRuntime: init stage=dmabuf_state");
         let mut dmabuf_state = DmabufState::new();
-        let dmabuf_formats = vec![
-            Format {
-                code: Fourcc::Abgr8888,
-                modifier: Modifier::Linear,
-            },
-            Format {
-                code: Fourcc::Xbgr8888,
-                modifier: Modifier::Linear,
-            },
-            Format {
-                code: Fourcc::Argb8888,
-                modifier: Modifier::Linear,
-            },
-            Format {
-                code: Fourcc::Xrgb8888,
-                modifier: Modifier::Linear,
-            },
-            Format {
-                code: Fourcc::Bgra8888,
-                modifier: Modifier::Linear,
-            },
-            Format {
-                code: Fourcc::Bgrx8888,
-                modifier: Modifier::Linear,
-            },
-        ];
+            let dmabuf_formats = vec![
+                Format { code: Fourcc::Xbgr8888, modifier: Modifier::Linear },
+                Format { code: Fourcc::Xbgr8888, modifier: Modifier::Invalid },
+                Format { code: Fourcc::Xrgb8888, modifier: Modifier::Linear },
+                Format { code: Fourcc::Xrgb8888, modifier: Modifier::Invalid },
+                Format { code: Fourcc::Abgr8888, modifier: Modifier::Linear },
+                Format { code: Fourcc::Abgr8888, modifier: Modifier::Invalid },
+                Format { code: Fourcc::Argb8888, modifier: Modifier::Linear },
+                Format { code: Fourcc::Argb8888, modifier: Modifier::Invalid },
+            ];
         let dmabuf_global =
-            dmabuf_state.create_global::<AndroidSeatRuntime>(display, dmabuf_formats);
+            dmabuf_state.create_global::<AndroidSeatRuntime>(
+                display, dmabuf_formats
+            );
         log::info!("SmithayRuntime: init stage=layer_shell_state");
         let layer_shell_state = init_stage("layer_shell_state", || {
             WlrLayerShellState::new::<Self>(display)

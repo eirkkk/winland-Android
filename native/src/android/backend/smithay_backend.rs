@@ -1,4 +1,32 @@
 
+fn cpu_read_dmabuf(fd: i32, offset: usize, stride: usize, width: usize, height: usize) -> Option<Vec<u8>> {
+    let map_len = offset + stride * height;
+    let ptr = unsafe {
+        libc::mmap(std::ptr::null_mut(), map_len,
+                   libc::PROT_READ, libc::MAP_SHARED, fd, 0)
+    };
+    if ptr == libc::MAP_FAILED {
+        log::warn!("dmabuf CPU fallback mmap FAILED fd={} map_len={}", fd, map_len);
+        return None;
+    }
+    let mut pixels = Vec::with_capacity(width * height * 4);
+    unsafe {
+        let base = (ptr as *const u8).add(offset);
+        for row in 0..height {
+            let src = base.add(row * stride);
+            for col in 0..width {
+                let p = src.add(col * 4);
+                pixels.push(*p);           // R
+                pixels.push(*p.add(1));    // G
+                pixels.push(*p.add(2));    // B
+                pixels.push(255);          // A (force opaque)
+            }
+        }
+        libc::munmap(ptr, map_len);
+    }
+    if pixels.is_empty() { None } else { Some(pixels) }
+}
+
 /// Render multiple surfaces in a single GLES pass with proper compositing.
 /// The caller owns the state (on the compositor thread) and passes it by reference.
 pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem]) {
@@ -171,77 +199,136 @@ pub fn composite_multi(state: &mut AndroidSmithayState, surfaces: &[RenderItem])
                     gl::DeleteTextures(1, &tex);
                 }
                 RenderItem::DmaBuf { ref fd, fourcc, modifier, offset, stride, width, height, .. } => {
-                    let (Some(create_image), Some(destroy_image), Some(target_texture)) =
-                        (state.egl_create_image_khr, state.egl_destroy_image_khr, state.gl_egl_image_target_texture_2d_oes)
-                    else {
-                        log::warn!("DmaBuf: EGL image extension not loaded, skipping");
-                        continue;
-                    };
-
-                    let fourcc_val = fourcc as i32;
-                    let is_valid_modifier = modifier != 0 && modifier != 0x00FFFFFFFFFFFFFF;
-                    let has_mods = state.has_dmabuf_import_modifiers && is_valid_modifier;
-                    let attribs = if has_mods {
-                        vec![
-                            EGL_LINUX_DRM_FOURCC_EXT, fourcc_val,
-                            EGL_DMA_BUF_PLANE0_FD_EXT, fd.as_raw_fd() as i32,
-                            EGL_DMA_BUF_PLANE0_OFFSET_EXT, offset as i32,
-                            EGL_DMA_BUF_PLANE0_PITCH_EXT, stride as i32,
-                            EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier as i32,
-                            EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, (modifier >> 32) as i32,
-                            EGL_IMAGE_PRESERVED_KHR, 1,
-                            EGL_NONE,
-                        ]
-                    } else {
-                        vec![
-                            EGL_LINUX_DRM_FOURCC_EXT, fourcc_val,
-                            EGL_DMA_BUF_PLANE0_FD_EXT, fd.as_raw_fd() as i32,
-                            EGL_DMA_BUF_PLANE0_OFFSET_EXT, offset as i32,
-                            EGL_DMA_BUF_PLANE0_PITCH_EXT, stride as i32,
-                            EGL_IMAGE_PRESERVED_KHR, 1,
-                            EGL_NONE,
-                        ]
-                    };
-
-                    let egl_img = create_image(display, std::ptr::null_mut(), EGL_LINUX_DMA_BUF_EXT, std::ptr::null_mut(), attribs.as_ptr());
-                    if egl_img.is_null() {
-                        log::warn!("DmaBuf: eglCreateImageKHR failed (fourcc=0x{:x} {}x{})", fourcc, width, height);
-                        continue;
+                    if offset > 0 {
+                        log::debug!("dmabuf: KGSL path detected fd={} offset={} (gem_handle={})",
+                                    fd.as_raw_fd(), offset, offset >> 12);
                     }
 
-                    let mut tex: gl::types::GLuint = 0;
-                    gl::GenTextures(1, &mut tex);
-                    gl::BindTexture(gl::TEXTURE_2D, tex);
-                    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::types::GLint);
-                    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::types::GLint);
-                    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as gl::types::GLint);
-                    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as gl::types::GLint);
-                    target_texture(gl::TEXTURE_2D, egl_img);
-                    destroy_image(display, egl_img);
+                    let egl_ok = state.egl_create_image_khr.is_some()
+                        && state.egl_destroy_image_khr.is_some()
+                        && state.gl_egl_image_target_texture_2d_oes.is_some();
 
-                    let logical_w = width as f32 / item_scale;
-                    let logical_h = height as f32 / item_scale;
-                    let x0 = (item_x as f32 / logical_sw) * 2.0 - 1.0;
-                    let y0 = 1.0 - (item_y as f32 / logical_sh) * 2.0;
-                    let x1 = ((item_x as f32 + logical_w) / logical_sw) * 2.0 - 1.0;
-                    let y1 = 1.0 - ((item_y as f32 + logical_h) / logical_sh) * 2.0;
+                    // Try EGL import first if available
+                    if egl_ok {
+                        let (Some(create_image), Some(destroy_image), Some(target_texture)) =
+                            (state.egl_create_image_khr, state.egl_destroy_image_khr, state.gl_egl_image_target_texture_2d_oes)
+                        else {
+                            unreachable!(); // checked above
+                        };
 
-                    let verts: [f32; 16] = [
-                        x0, y1, 0.0, 1.0,
-                        x1, y1, 1.0, 1.0,
-                        x0, y0, 0.0, 0.0,
-                        x1, y0, 1.0, 0.0,
-                    ];
+                        let fourcc_val = fourcc as i32;
+                        let is_valid_modifier = modifier != 0 && modifier != 0x00FFFFFFFFFFFFFF;
+                        let has_mods = state.has_dmabuf_import_modifiers && is_valid_modifier;
+                        let attribs = if has_mods {
+                            vec![
+                                EGL_LINUX_DRM_FOURCC_EXT, fourcc_val,
+                                EGL_DMA_BUF_PLANE0_FD_EXT, fd.as_raw_fd() as i32,
+                                EGL_DMA_BUF_PLANE0_OFFSET_EXT, i32::try_from(offset).unwrap_or(0),
+                                EGL_DMA_BUF_PLANE0_PITCH_EXT, stride as i32,
+                                EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, modifier as i32,
+                                EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, (modifier >> 32) as i32,
+                                EGL_IMAGE_PRESERVED_KHR, 1,
+                                EGL_NONE,
+                            ]
+                        } else {
+                            vec![
+                                EGL_LINUX_DRM_FOURCC_EXT, fourcc_val,
+                                EGL_DMA_BUF_PLANE0_FD_EXT, fd.as_raw_fd() as i32,
+                                EGL_DMA_BUF_PLANE0_OFFSET_EXT, i32::try_from(offset).unwrap_or(0),
+                                EGL_DMA_BUF_PLANE0_PITCH_EXT, stride as i32,
+                                EGL_IMAGE_PRESERVED_KHR, 1,
+                                EGL_NONE,
+                            ]
+                        };
 
-                    let vert_stride = (4 * std::mem::size_of::<f32>()) as i32;
-                    gl::EnableVertexAttribArray(0);
-                    gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, vert_stride, verts.as_ptr() as *const std::ffi::c_void);
-                    gl::EnableVertexAttribArray(1);
-                    gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, vert_stride, verts.as_ptr().add(2) as *const std::ffi::c_void);
-                    gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
-                    gl::DisableVertexAttribArray(0);
-                    gl::DisableVertexAttribArray(1);
-                    gl::DeleteTextures(1, &tex);
+                        let egl_img = create_image(display, std::ptr::null_mut(), EGL_LINUX_DMA_BUF_EXT, std::ptr::null_mut(), attribs.as_ptr());
+                        if !egl_img.is_null() {
+                            let mut tex: gl::types::GLuint = 0;
+                            gl::GenTextures(1, &mut tex);
+                            gl::BindTexture(gl::TEXTURE_2D, tex);
+                            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::types::GLint);
+                            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::types::GLint);
+                            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as gl::types::GLint);
+                            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as gl::types::GLint);
+                            target_texture(gl::TEXTURE_2D, egl_img);
+                            destroy_image(display, egl_img);
+
+                            let logical_w = width as f32 / item_scale;
+                            let logical_h = height as f32 / item_scale;
+                            let x0 = (item_x as f32 / logical_sw) * 2.0 - 1.0;
+                            let y0 = 1.0 - (item_y as f32 / logical_sh) * 2.0;
+                            let x1 = ((item_x as f32 + logical_w) / logical_sw) * 2.0 - 1.0;
+                            let y1 = 1.0 - ((item_y as f32 + logical_h) / logical_sh) * 2.0;
+
+                            let verts: [f32; 16] = [
+                                x0, y1, 0.0, 1.0,
+                                x1, y1, 1.0, 1.0,
+                                x0, y0, 0.0, 0.0,
+                                x1, y0, 1.0, 0.0,
+                            ];
+
+                            let vert_stride = (4 * std::mem::size_of::<f32>()) as i32;
+                            gl::EnableVertexAttribArray(0);
+                            gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, vert_stride, verts.as_ptr() as *const std::ffi::c_void);
+                            gl::EnableVertexAttribArray(1);
+                            gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, vert_stride, verts.as_ptr().add(2) as *const std::ffi::c_void);
+                            gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
+                            gl::DisableVertexAttribArray(0);
+                            gl::DisableVertexAttribArray(1);
+                            gl::DeleteTextures(1, &tex);
+                            log::info!("DmaBuf: EGL imported {}x{}", width, height);
+                            continue;
+                        }
+                        log::warn!("DmaBuf: eglCreateImageKHR failed, trying CPU fallback");
+                    }
+
+                    // CPU mmap fallback (EGL failed or unavailable)
+                    let w = width as usize;
+                    let h = height as usize;
+                    let s = stride as usize;
+                    let o = offset as usize;
+                    if let Some(pixels) = cpu_read_dmabuf(
+                        fd.as_raw_fd(), o, s, w, h,
+                    ) {
+                        let mut tex: gl::types::GLuint = 0;
+                        gl::GenTextures(1, &mut tex);
+                        gl::BindTexture(gl::TEXTURE_2D, tex);
+                        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::types::GLint);
+                        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::types::GLint);
+                        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as gl::types::GLint);
+                        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as gl::types::GLint);
+                        gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGBA as i32,
+                                       width, height, 0, gl::RGBA,
+                                       gl::UNSIGNED_BYTE, pixels.as_ptr() as *const std::ffi::c_void);
+
+                        let logical_w = width as f32 / item_scale;
+                        let logical_h = height as f32 / item_scale;
+                        let x0 = (item_x as f32 / logical_sw) * 2.0 - 1.0;
+                        let y0 = 1.0 - (item_y as f32 / logical_sh) * 2.0;
+                        let x1 = ((item_x as f32 + logical_w) / logical_sw) * 2.0 - 1.0;
+                        let y1 = 1.0 - ((item_y as f32 + logical_h) / logical_sh) * 2.0;
+
+                        let verts: [f32; 16] = [
+                            x0, y1, 0.0, 1.0,
+                            x1, y1, 1.0, 1.0,
+                            x0, y0, 0.0, 0.0,
+                            x1, y0, 1.0, 0.0,
+                        ];
+
+                        let vert_stride = (4 * std::mem::size_of::<f32>()) as i32;
+                        gl::EnableVertexAttribArray(0);
+                        gl::VertexAttribPointer(0, 2, gl::FLOAT, gl::FALSE, vert_stride, verts.as_ptr() as *const std::ffi::c_void);
+                        gl::EnableVertexAttribArray(1);
+                        gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, vert_stride, verts.as_ptr().add(2) as *const std::ffi::c_void);
+                        gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
+                        gl::DisableVertexAttribArray(0);
+                        gl::DisableVertexAttribArray(1);
+                        gl::DeleteTextures(1, &tex);
+                        log::info!("DmaBuf: CPU fallback rendered {}x{} via mmap", width, height);
+                        continue;
+                    }
+                    log::warn!("DmaBuf: fallback failed, skipping");
+                    continue;
                 }
             }
         }
@@ -291,6 +378,7 @@ use nix::sys::memfd::{memfd_create, MFdFlags};
 use nix::unistd::ftruncate;
 use std::ffi::CString;
 use std::os::fd::{AsRawFd, OwnedFd};
+use libc;
 
 const EGL_NONE: i32 = 0x3038;
 const EGL_EXTENSIONS: i32 = 0x3055;
