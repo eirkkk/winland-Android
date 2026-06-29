@@ -15,6 +15,13 @@ fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
 
+    // Link against NDK's libc++_shared.so so that C++ ABI symbols
+    // (__cxa_guard_acquire, __gxx_personality_v0, etc.) are available
+    // at runtime via the NEEDED dependency mechanism.
+    if target_os == "android" {
+        println!("cargo:rustc-link-lib=dylib=c++_shared");
+    }
+
     if !smithay_android_enabled || target_os != "android" || target_arch != "aarch64" {
         return;
     }

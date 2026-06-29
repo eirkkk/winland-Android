@@ -465,9 +465,6 @@ class DisplayActivity : ComponentActivity() {
                                 NativeBridge.setScrollSensitivity(prefs.getFloat("scroll_sensitivity", 1.0f))
                                 val inputPrefs = context.getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
                                 NativeBridge.setInputMode(inputPrefs.getInt("input_mode_mask", 1))
-                                NativeBridge.initAudioBridge()
-
-
                                 if (didRequestGuestStart.compareAndSet(false, true)) {
                                     lifecycleScope.launch(Dispatchers.IO) {
                                         Log.i("WinlandDiag", "Guest Start: Waiting for Wayland socket probe...")
@@ -734,7 +731,9 @@ class DisplayActivity : ComponentActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        // Wayland resize events should be handled here if supported by the bridge
+        // Surface resize is handled by SurfaceHolder.Callback.onSurfaceChanged().
+        // Immersive mode (WindowInsetsControllerCompat) is re-applied by the
+        // SideEffect block in the Compose layout on recomposition.
     }
 
     private fun isModifierKey(keyCode: Int): Boolean = keyCode in listOf(

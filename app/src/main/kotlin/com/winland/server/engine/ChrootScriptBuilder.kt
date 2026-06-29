@@ -432,6 +432,7 @@ UP_EOF
                 fi
 
                 echo "Starting PulseAudio..."
+                chmod 1777 /tmp 2>/dev/null || true
                 mkdir -p /tmp/pulse-runtime
                 chmod 777 /tmp/pulse-runtime 2>/dev/null || true
                 rm -rf /tmp/pulse-verbose.log $PULSE_SOCKET_PATH /tmp/pulse.pa
@@ -448,6 +449,8 @@ CLIENT_EOF
                 load-module module-native-protocol-unix auth-anonymous=1 socket=$PULSE_SOCKET_PATH
                 load-module module-pipe-sink sink_name=AndroidSink file=/tmp/audio_bridge/fifo format=s16le channels=2 rate=44100
                 set-default-sink AndroidSink
+                load-module module-pipe-source source_name=AndroidMic file=/tmp/audio_bridge/mic_fifo format=s16le channels=1 rate=44100
+                set-default-source AndroidMic
 PULSE_EOF
 
                 chmod 755 /run 2>/dev/null || true

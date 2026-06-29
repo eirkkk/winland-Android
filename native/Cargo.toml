@@ -58,7 +58,7 @@ winit = { path = "lib/winit/winit", default-features = false, features = ["andro
 
 # Android / Wayland extras
 robius-directories = "5.0.1"   # مسار XDG_RUNTIME_DIR الآمن على Android
-cpal = "0.15.3"                # الصوت (تشغيل/تسجيل) عبر AAudio/OpenSL
+oboe = "0.6.1"                # الصوت (تشغيل/تسجيل) عبر Oboe (AAudio + OpenSL ES)
 nokhwa = { version = "0.10.7", features = ["input-native", "rgb"] }  # الكاميرا
 sysinfo = "0.30.0"             # معلومات النظام (CPU, RAM, ...)
 # hbm is disabled because the current Android cross-build breaks on nix::sys::stat::makedev

@@ -14,7 +14,6 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
-import com.winland.server.engine.WinlandAudioServer
 import com.winland.server.engine.WinlandCameraBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -22,7 +21,6 @@ import kotlinx.coroutines.launch
 class WinlandService : LifecycleService() {
 
     private val TAG = "WinlandService"
-    private val audioServer = WinlandAudioServer()
     private lateinit var cameraBridge: WinlandCameraBridge
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -101,7 +99,7 @@ class WinlandService : LifecycleService() {
                         if (!NativeBridge.awaitLibrariesLoaded()) {
                             Log.e(TAG, "Native libraries not loaded; service running in degraded mode")
                         }
-                        audioServer.start()
+                        NativeBridge.initAudioBridge()
 //                        cameraBridge = WinlandCameraBridge(this@WinlandService)
 //                        cameraBridge.start(this@WinlandService)
                     } catch (t: Throwable) {
@@ -157,11 +155,11 @@ class WinlandService : LifecycleService() {
                 Log.i(TAG, "Wake lock released")
             } catch (_: Exception) {}
 
-            // Full teardown: stop compositor thread, unbind socket, release native resources.
+            // Full teardown: stop audio bridge, compositor thread, unbind socket.
             // This is a true service shutdown — not a freeze.
+            NativeBridge.closeAudioBridge()
             NativeBridge.releaseWaylandConnection()
 
-            runCatching { audioServer.stop() }
             if (::cameraBridge.isInitialized) {
                 runCatching { cameraBridge.stop() }
             }

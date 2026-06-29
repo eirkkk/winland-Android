@@ -3,6 +3,7 @@ package com.winland.server
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -30,6 +31,8 @@ class TerminalActivity : ComponentActivity(), TerminalSessionClient, TerminalVie
 
     companion object {
         private const val TAG = "TerminalActivity"
+        private var savedSession: TerminalSession? = null
+        private var savedShellPid: Int = -1
     }
 
     private lateinit var terminalView: TerminalView
@@ -40,6 +43,7 @@ class TerminalActivity : ComponentActivity(), TerminalSessionClient, TerminalVie
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.i(TAG, "onCreate: savedInstanceState=$savedInstanceState, savedSession.isRunning=${savedSession?.isRunning}")
 
         // Fullscreen immersive
         window.statusBarColor = Color.BLACK
@@ -68,7 +72,25 @@ class TerminalActivity : ComponentActivity(), TerminalSessionClient, TerminalVie
         }
         setContentView(container)
 
-        startTerminalSession()
+        // Reuse saved session if still running, otherwise start fresh
+        val existing = savedSession
+        if (existing != null && existing.isRunning) {
+            Log.i(TAG, "onCreate: Reusing existing session (PID=${existing.pid})")
+            currentSession = existing
+            shellPid = savedShellPid
+            savedSession = null
+            existing.updateTerminalSessionClient(this)
+            terminalView.attachSession(existing)
+            terminalView.requestFocus()
+            terminalView.post {
+                terminalView.updateSize()
+                terminalView.onScreenUpdated()
+            }
+        } else {
+            if (existing != null) Log.w(TAG, "onCreate: savedSession exists but isRunning=${existing.isRunning}, starting fresh")
+            savedSession = null
+            startTerminalSession()
+        }
     }
 
     private fun findSuBinary(): String? {
@@ -141,6 +163,7 @@ class TerminalActivity : ComponentActivity(), TerminalSessionClient, TerminalVie
         try {
             val session = TerminalSession(shellBinary, cwd, args, env, null, this)
             currentSession = session
+            savedSession = session
             terminalView.attachSession(session)
             terminalView.requestFocus()
 
@@ -349,8 +372,60 @@ export HOME=/root
         terminalView.post { terminalView.requestFocus() }
     }
 
+    override fun onStart() {
+        super.onStart()
+        Log.i(TAG, "onStart")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Log.i(TAG, "onStop")
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        Log.i(TAG, "onRestart")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Log.i(TAG, "onResume: session.isRunning=${currentSession?.isRunning}")
+        terminalView.setTerminalCursorBlinkerState(true, true)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Log.i(TAG, "onPause")
+        terminalView.setTerminalCursorBlinkerState(false, false)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        Log.i(TAG, "onConfigurationChanged: ${newConfig.orientation}")
+
+        // Re-apply immersive fullscreen — system bars may reappear after rotation
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            window.insetsController?.let {
+                it.hide(android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.navigationBars())
+                it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }
+
+        terminalView.post {
+            terminalView.updateSize()
+            terminalView.onScreenUpdated()
+        }
+    }
+
     override fun onDestroy() {
+        Log.i(TAG, "onDestroy: isFinishing=${isFinishing}, session.isRunning=${currentSession?.isRunning}")
+        val session = currentSession
+        if (session != null && session.isRunning) {
+            Log.i(TAG, "onDestroy: Saving running session (PID=${session.pid}) to companion for reuse")
+            savedSession = session
+            savedShellPid = shellPid
+        }
+        currentSession = null
         super.onDestroy()
-        currentSession?.finishIfRunning()
     }
 }

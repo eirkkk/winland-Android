@@ -357,6 +357,7 @@ object ChrootInstaller {
         )
 
         return try {
+            NativeBridge.startRecording()
             val result = executeRootCommand(
                 command = bootScript,
                 timeoutMinutes = 30,
@@ -378,6 +379,7 @@ object ChrootInstaller {
         val stopScript = ChrootScriptBuilder.buildStopScript(filesDir, rootfsDir)
 
         _logFlow.tryEmit("INFO: stopping rootful chroot session...")
+        NativeBridge.stopRecording()
         val result = executeRootCommand(
             command = stopScript,
             timeoutMinutes = 10,
