@@ -32,8 +32,9 @@ A native Wayland compositor for Android that runs full Linux desktop environment
 - **External mouse** — full desktop-grade pointer support via USB/Bluetooth
 - **Physical keyboard** — complete keymap handling with XKB, multi-key shortcuts
 
-### Audio
-- **Experimental audio bridge** — PCM audio routed from chroot Linux apps to Android's `AudioTrack` via a named FIFO pipe
+### Audio (Native)
+- **Native audio playback** — Zero-copy PCM audio routed via Oboe (AAudio) between chroot PulseAudio and Android audio hardware through a named FIFO pipe
+- **Native microphone input** — Android mic captured via Oboe (AAudio) at 44.1kHz mono 16-bit and streamed into chroot PulseAudio through a dedicated FIFO pipe; fully native with no VNC/streaming overhead
 
 ### Chroot Environment
 - **Ubuntu 24.04 (Noble)** and **Kali Nethunter** rootfs support
@@ -98,7 +99,7 @@ A native Wayland compositor for Android that runs full Linux desktop environment
 | **FFI Bridge** | UniFFI (Mozilla) + JNA |
 | **Graphics** | Vulkan (Turnip), OpenGL ES, HardwareBuffer |
 | **Input** | Android MotionEvent → Rust compositor |
-| **Audio** | FIFO pipe → Android AudioTrack |
+| **Audio** | Native Oboe (AAudio) — playback FIFO + mic FIFO ↔ PulseAudio inside chroot |
 | **Chroot** | BusyBox + shell scripts |
 | **Compiler** | Rust → NDK (aarch64-linux-android), Meson (C libs), Gradle (Kotlin) |
 
@@ -194,7 +195,7 @@ cp terminal-emulator/src/main/libs/arm64-v8a/libtermux.so app/src/main/jniLibs/a
 
 5. **Input Routing**: Touch events, keyboard input, and mouse events from Android are forwarded through UniFFI to the Rust compositor, which injects them into the Wayland protocol.
 
-6. **Audio Bridge**: PulseAudio inside the chroot writes PCM audio data to a named FIFO. The Android `WinlandAudioServer` reads from this FIFO and plays it through `AudioTrack`.
+6. **Audio Bridge (Native)**: PulseAudio inside the chroot writes PCM audio to a named FIFO; the Rust audio bridge reads it via Oboe (AAudio) for zero-copy playback on Android speakers. For microphone input, Oboe captures 44.1kHz mono 16-bit audio from the Android mic and writes to a second FIFO, which PulseAudio reads as the `AndroidMic` source — all natively with no streaming overhead.
 
 7. **Rendering**: The compositor renders directly onto an Android `SurfaceView` using Vulkan (Zink/Turnip) or OpenGL ES via HardwareBuffers.
 

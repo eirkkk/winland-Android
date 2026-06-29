@@ -135,4 +135,16 @@ export QT_QPA_PLATFORM=xcb
 export PULSE_SERVER=unix:/tmp/pulse-socket
 EOF_PROFILE
 
+echo "INFO: Installing Firefox from Mozilla official repo"
+install -d /etc/apt/keyrings
+wget -q https://mozilla.org -O- | tee /etc/apt/keyrings/packages.mozilla.org.asc > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://mozilla.org mozilla main" | tee /etc/apt/sources.list.d/mozilla.list > /dev/null
+cat > /etc/apt/preferences.d/mozilla <<'EOF'
+Package: firefox*
+Pin: origin packages.mozilla.org
+Pin-Priority: 1001
+EOF
+apt-get -yq update || true
+install_with_retry firefox || true
+
 echo "Kali setup finished."

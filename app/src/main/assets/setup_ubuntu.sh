@@ -126,4 +126,18 @@ export QT_QPA_PLATFORM=xcb
 export PULSE_SERVER=unix:/tmp/pulse-socket
 EOF_PROFILE
 
+echo "INFO: Installing Firefox from Mozilla PPA"
+add-apt-repository -y ppa:mozillateam/ppa || true
+cat > /etc/apt/preferences.d/mozillateamppa <<'EOF'
+Package: firefox*
+Pin: release o=LP-PPA-mozillateam
+Pin-Priority: 1001
+
+Package: firefox*
+Pin: release o=Ubuntu
+Pin-Priority: -1
+EOF
+apt-get -yq update || true
+install_with_retry firefox || true
+
 echo "Ubuntu setup finished."

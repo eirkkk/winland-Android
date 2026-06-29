@@ -25,6 +25,7 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
 
     companion object {
         private const val TAG = "EmbeddedTerminal"
+        private val sessions: MutableMap<String, TerminalSession?> = mutableMapOf()
     }
 
     var terminalView: TerminalView? = null
@@ -36,7 +37,6 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
     private var scaleAccumulator = 0f
     private var shellPid: Int = -1
     private var terminalDistroId: String = "ubuntu"
-    private val sessions: MutableMap<String, TerminalSession?> = mutableMapOf()
     private var ptmxFixAttempted = false
     var onSessionStateChanged: ((Boolean) -> Unit)? = null
     val currentDistroId: String get() = terminalDistroId
@@ -121,11 +121,14 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
 
         val existing = sessions[id]
         if (existing != null && existing.isRunning()) {
+            Log.i(TAG, "Reusing existing session for distro $id (pid=${existing.pid})")
+            existing.updateTerminalSessionClient(this)
             tv.attachSession(existing)
             tv.requestFocus()
             onSessionStateChanged?.invoke(true)
             return
         }
+        Log.i(TAG, "Creating new session for distro $id (existing=${existing != null}, running=${existing?.isRunning()})")
 
         ensurePtmxAccess()
 

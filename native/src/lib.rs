@@ -20,7 +20,7 @@ pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: *mut std::ffi::c_v
 }
 
 mod compositor;
-mod audio;
+mod audio_oboe;
 mod usb;
 mod root;
 mod distro;
@@ -84,7 +84,23 @@ pub fn init_compositor(distro_id: String) {
 
 #[uniffi::export]
 pub fn init_audio() {
-    audio::init();
+    audio_oboe::init();
+    audio_oboe::start_playback();
+}
+
+#[uniffi::export]
+pub fn start_recording() {
+    audio_oboe::start_recording();
+}
+
+#[uniffi::export]
+pub fn stop_recording() {
+    audio_oboe::stop_recording();
+}
+
+#[uniffi::export]
+pub fn close_audio() {
+    audio_oboe::close();
 }
 
 #[uniffi::export]
@@ -102,7 +118,40 @@ pub extern "system" fn Java_com_winland_server_NativeBridge_initAudioBridge(
     _env: JNIEnv,
     _class: JClass,
 ) {
-    audio::init();
+    audio_oboe::init();
+    audio_oboe::start_playback();
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_winland_server_NativeBridge_startRecording(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    audio_oboe::start_recording();
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_winland_server_NativeBridge_stopRecording(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    audio_oboe::stop_recording();
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_winland_server_NativeBridge_isRecording(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jboolean {
+    audio_oboe::is_recording() as jni::sys::jboolean
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_winland_server_NativeBridge_closeAudioBridge(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    audio_oboe::close();
 }
 
 #[no_mangle]

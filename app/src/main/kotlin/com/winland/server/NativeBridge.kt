@@ -34,14 +34,19 @@ object NativeBridge {
     private var clipboardListener: ((String) -> Unit)? = null
 
     private fun loadLibraryStrict(name: String) {
-        val loader = NativeBridge::class.java.classLoader as? BaseDexClassLoader
-        val absolutePath = loader?.findLibrary(name)
-        if (!absolutePath.isNullOrBlank()) {
-            Log.i(TAG, "Loading $name from absolute path: $absolutePath")
-            System.load(absolutePath)
-        } else {
-            Log.w(TAG, "findLibrary($name) returned null, falling back to System.loadLibrary")
+        val loader = NativeBridge::class.java.classLoader
+        try {
+            Log.i(TAG, "Loading $name via System.loadLibrary")
             System.loadLibrary(name)
+        } catch (e: UnsatisfiedLinkError) {
+            val dexLoader = loader as? BaseDexClassLoader
+            val absolutePath = dexLoader?.findLibrary(name)
+            if (!absolutePath.isNullOrBlank()) {
+                Log.i(TAG, "Loading $name from absolute path: $absolutePath")
+                System.load(absolutePath)
+            } else {
+                throw e
+            }
         }
     }
 
@@ -108,6 +113,10 @@ object NativeBridge {
     external fun onSurfaceChanged(width: Int, height: Int, physicalWidthMm: Int, physicalHeightMm: Int)
     external fun releaseWaylandConnection()
     external fun initAudioBridge()
+    external fun startRecording()
+    external fun stopRecording()
+    external fun isRecording(): Boolean
+    external fun closeAudioBridge()
     external fun initUsbRedirection(fd: Int)
     external fun closeUsbRedirection()
     external fun updateClipboard(text: String)

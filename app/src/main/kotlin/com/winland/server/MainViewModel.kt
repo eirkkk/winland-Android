@@ -328,7 +328,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     gpuHistory = (prev.gpuHistory + (gpu ?: prev.gpuHistory.lastOrNull() ?: 0f)).takeLast(24)
                 )
 
-                val backendSnapshot = runCatching { NativeBridge.getBackendSnapshot() }.getOrNull() ?: ""
+                val backendSnapshot = if (NativeBridge.isLoaded()) {
+                    runCatching { NativeBridge.getBackendSnapshot() }.getOrNull() ?: ""
+                } else ""
                 _displayInfo.value = parseDisplayInfo(backendSnapshot)
 
                 delay(1_000)
