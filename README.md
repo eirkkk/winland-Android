@@ -13,17 +13,21 @@ Winland Server is a full-featured Wayland compositor that runs natively on Andro
 
 ## ✨ Features
 
-### 🖥️ Wayland Compositor
-- Full Wayland protocol implementation via Rust/Smithay stack
-- OpenGL ES 2.0 hardware-accelerated rendering via EGL
-- Fractional scaling support (1080p / 720p resolution presets)
-- XWayland compatibility for X11-only applications
-- SHM and DMA-BUF buffer strategies
+### 🖥️ Display & Graphics
+- **Native Wayland compositor** built with [Smithay](https://github.com/Smithay/smithay) — no VNC/RDP/streaming overhead
+- **Vulkan hardware acceleration** via Zink (OpenGL-on-Vulkan) using Turnip driver on Adreno GPUs, fully integrated with LabWC for desktop-wide GPU compositing
+- **GPU acceleration per-app**: Type `gpu` in the terminal followed by the game/app name to launch it with the Zink accelerator enabled
+- **OpenGL ES path** via Android HardwareBuffers for devices without Vulkan
+- **XWayland** support for legacy X11 applications
+- **Dynamic resolution** with persistent scale locking across Android lifecycle events
+- **Screen rotation support** — seamless landscape/portrait switching with correct input coordinate mapping and pointer icon management
+- **Multi-display ready** architecture
 
-### 🎮 Input Modes
+### 🎮 Input Systems
 - **Touch** — Direct touch-to-Wayland-touch translation with gesture support (window move/resize, 3-finger swipe to cycle windows)
 - **Trackpad** — Relative pointer motion with acceleration, two-finger tap for click, pinch-to-zoom
-- **Mouse** — Absolute pointer emulation with constrained-relative mode for pointer-lock applications (games, design tools)
+- **Bluetooth & wired mouse** — full desktop-grade pointer support with left-click, right-click, hover, and orientation-aware coordinates
+- **Bluetooth & USB keyboard** — complete keymap handling with XKB, multi-key shortcuts, physical keyboard input via Android
 
 ### 📦 Linux Distro Management
 - Install, setup, run, stop, and restart Linux distributions
@@ -31,9 +35,10 @@ Winland Server is a full-featured Wayland compositor that runs natively on Andro
 - Chroot-based isolation with bind-mount management
 - Clean unmount on shutdown/reboot
 
-### 🔊 Audio & USB
-- Audio bridge via CPAL (cross-platform audio library)
-- USB device redirection for peripherals
+### 🔊 Audio & Clipboard
+- **Native audio playback** — Zero-copy PCM audio routed via Oboe (AAudio) between chroot PulseAudio and Android audio hardware through a named FIFO pipe
+- **Native microphone input** — Android mic captured via Oboe (AAudio) at 44.1kHz mono 16-bit and streamed into chroot PulseAudio through a dedicated FIFO pipe
+- **Clipboard sync** — Full copy/paste between Android and Linux applications (X11 and Wayland)
 
 ### 🔧 Developer Tools
 - Live log panel with search, copy, and pause
@@ -51,7 +56,7 @@ Winland Server is a full-featured Wayland compositor that runs natively on Andro
 | **Architecture** | ARM64 (arm64-v8a) | ARM64 |
 | **RAM** | 3 GB | 6 GB+ |
 | **Storage** | 2 GB free | 8 GB+ |
-| **GPU** | OpenGL ES 2.0 | OpenGL ES 3.0+ |
+| **GPU** | Adreno 650+ (Vulkan 1.1+ for Turnip) | OpenGL ES 3.0+ |
 
 ---
 
@@ -188,8 +193,8 @@ your-linux-app
 | **Display** | SurfaceView + EGL | Full-screen compositor output, touch input routing |
 | **Bridge** | JNI + UniFFI | Kotlin↔Rust communication |
 | **Compositor** | Rust (Smithay) | Wayland protocol, input routing, shell management |
-| **Rendering** | OpenGL ES 2.0 | Surface compositing, texture upload, NDC mapping |
-| **Audio** | CPAL | Audio playback from Linux apps |
+| **Rendering** | OpenGL ES 2.0 / Vulkan (Zink+Turnip) | Surface compositing, texture upload, NDC mapping |
+| **Audio** | Oboe (AAudio) | Native zero-copy audio playback + mic capture via FIFO pipes |
 | **Distro** | Rust bindings | Rootfs management, chroot lifecycle |
 
 ---
@@ -234,7 +239,7 @@ The compositor exposes real-time diagnostics via `getWaylandRuntimeStats()` (acc
 | Black screen | EGL init failure / Surface not bound | Restart the compositor |
 | Input not working | Wrong input mode | Switch mode in Settings tab |
 | Apps crash on connect | XDG_RUNTIME_DIR permissions | Ensure directory is accessible |
-| Low FPS | Missing GPU acceleration | Verify OpenGL ES support |
+| Low FPS | Missing GPU acceleration | Verify OpenGL ES / Vulkan support |
 
 ---
 
@@ -264,6 +269,7 @@ Copyright (c) 2024 Winland Server Contributors
 
 - [Smithay](https://github.com/Smithay/smithay) — Rust Wayland compositor library
 - [Wayland](https://wayland.freedesktop.org/) — Display server protocol
+- The [Turnip](https://gitlab.freedesktop.org/mesa/mesa/-/tree/master/src/gallium/drivers/zink) driver team for Vulkan-on-Adreno support
 - [Termux](https://termux.com/) — Android terminal emulator (terminal-view/terminal-emulator modules)
 - [UniFFI](https://github.com/mozilla/uniffi-rs) — Rust-to-Kotlin bindings generator
 - [Android NDK](https://developer.android.com/ndk) — Native development kit
