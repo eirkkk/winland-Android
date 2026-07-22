@@ -243,6 +243,11 @@ cat > /etc/xdg/labwc/autostart <<'EOF_AUTOSTART'
 #!/bin/bash
 # Set output mode to match Android display
 wlr-randr --output WL-1 --custom-mode 1080x2296
+
+# Clipboard sync between Smithay (outer) and labwc (inner)
+XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0 wl-paste -t text --watch sh -c 'txt=$(XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0 wl-paste -n 2>/dev/null); old=$(XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0 wl-paste -n 2>/dev/null); [ "$txt" != "$old" ] && echo -n "$txt" | env XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0 wl-copy' &
+
+XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0 wl-paste -t text --watch sh -c 'txt=$(XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0 wl-paste -n 2>/dev/null); old=$(XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0 wl-paste -n 2>/dev/null); [ "$txt" != "$old" ] && echo -n "$txt" | env XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0 wl-copy' &
 EOF_AUTOSTART
 chmod +x /etc/xdg/labwc/autostart
 
