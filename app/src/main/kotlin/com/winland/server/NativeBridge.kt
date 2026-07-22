@@ -137,7 +137,7 @@ object NativeBridge {
     external fun setRefreshRate(rate: Float)
     external fun setResolution(width: Int, height: Int)
     external fun setScale(scale: Float)
-    external fun setYOffset(y_offset: Int)
+    external fun setOffsets(x_offset: Int, y_offset: Int)
     external fun getWaylandRuntimeStats(): String
     external fun getBackendSnapshot(): String
     external fun getLastNativeError(): String?

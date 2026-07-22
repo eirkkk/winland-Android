@@ -109,8 +109,10 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
             while let Ok(cmd) = cmd_rx.try_recv() {
                 match cmd {
                     JniCommand::TouchInput { action, id, x, y } => {
+                        let x_offset = backend_state.x_offset as f32;
                         let y_offset = backend_state.y_offset as f32;
-                        let adjusted_y = if y > y_offset { y - y_offset } else { 0.0 };
+                        let adjusted_x = (x - x_offset).max(0.0);
+                        let adjusted_y = (y - y_offset).max(0.0);
                         let logical_w = backend_state.surface_size.0;
                         let logical_h = backend_state.surface_size.1;
 
@@ -121,8 +123,8 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
                                 // anchor lifecycle (down→anchor, move→delta, up→clear)
                                 // is never disrupted by InputRouter state.
                                 let point = crate::android::backend::wayland::input::TouchPoint {
-                                    x, y: adjusted_y,
-                                    x_norm: if logical_w > 0 { (x / logical_w as f32).clamp(0.0, 1.0) } else { 0.0 },
+                                    x: adjusted_x, y: adjusted_y,
+                                    x_norm: if logical_w > 0 { (adjusted_x / logical_w as f32).clamp(0.0, 1.0) } else { 0.0 },
                                     y_norm: if logical_h > 0 { (adjusted_y / logical_h as f32).clamp(0.0, 1.0) } else { 0.0 },
                                 };
                                 let event = match action {
@@ -137,7 +139,7 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
                             } else {
                                 // Touch / Mouse mode: use InputRouter for gesture
                                 // detection, multi-touch scroll, etc.
-                                let events = input_router.route_touch(action, id, x, adjusted_y, logical_w, logical_h);
+                                let events = input_router.route_touch(action, id, adjusted_x, adjusted_y, logical_w, logical_h);
                                 for event in &events {
                                     server.runtime.inject_routed_event(event);
                                     crate::android::backend::wayland::seat_injector::record_injection(event);
@@ -189,6 +191,8 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
                         // Otherwise, use the native dimensions from surfaceChanged.
                         let effective_size = backend_state.requested_resolution.unwrap_or((width, height));
                         backend_state.surface_size = effective_size;
+                        backend_state.x_offset = 0;
+                        backend_state.y_offset = 0;
                         if physical_width_mm > 0 && physical_height_mm > 0 {
                             backend_state.physical_size_mm = (physical_width_mm.max(1), physical_height_mm.max(1));
                         }
@@ -202,15 +206,11 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
                             let logical_w = (effective_size.0 as f32 / scale).round() as i32;
                             let logical_h = (effective_size.1 as f32 / scale).round() as i32;
                             if let Some(server) = wayland_server.as_mut() {
-                                server.runtime.update_output_mode(effective_size.0, effective_size.1, None);
+                                let (actual_w, actual_h) = server.runtime.update_output_mode(effective_size.0, effective_size.1, None);
+                                backend_state.surface_size = (actual_w, actual_h);
                             }
-                            crate::android::command_channel::set_logical_size(logical_w.max(1), logical_h.max(1));
-                        } else {
-                            crate::android::command_channel::set_logical_size(effective_size.0.max(1), effective_size.1.max(1));
+                            crate::android::command_channel::set_physical_size(backend_state.physical_size_mm.0, backend_state.physical_size_mm.1);
                         }
-                        // Update caches immediately so seat.rs reads current values
-                        crate::android::command_channel::set_surface_size(backend_state.surface_size.0, backend_state.surface_size.1);
-                        crate::android::command_channel::set_physical_size(backend_state.physical_size_mm.0, backend_state.physical_size_mm.1);
                     }
                     JniCommand::BindNativeWindow { native_window, response } => {
                         let ptr = native_window.0 as *mut ndk_sys::ANativeWindow;
@@ -236,7 +236,9 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
                     JniCommand::SetPhysicalSize { width_mm, height_mm } => {
                         backend_state.physical_size_mm = (width_mm.max(1), height_mm.max(1));
                     }
-                    JniCommand::SetYOffset { y_offset } => {
+                    JniCommand::SetOffsets { x_offset, y_offset } => {
+                        log::info!("Compositor: offsets ({}, {})", x_offset, y_offset);
+                        backend_state.x_offset = x_offset.max(0);
                         backend_state.y_offset = y_offset.max(0);
                     }
                     JniCommand::EnableShm => {
@@ -259,9 +261,11 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
                     }
                     JniCommand::ResumeRendering => {}
                     JniCommand::SetResolution { width, height } => {
-                        backend_state.surface_size = (width, height);
                         backend_state.requested_resolution = Some((width, height));
-                        crate::android::command_channel::set_surface_size(width, height);
+                        if let Some(server) = wayland_server.as_mut() {
+                            let (actual_w, actual_h) = server.runtime.update_output_mode(width, height, None);
+                            backend_state.surface_size = (actual_w, actual_h);
+                        }
                     }
                     JniCommand::SetScale { scale } => {
                         backend_state.requested_scale = Some(scale);
@@ -269,11 +273,9 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
                         crate::android::command_channel::set_scale(scale);
                         let (w, h) = backend_state.surface_size;
                         if w > 0 && h > 0 {
-                            let logical_w = (w as f32 / scale).round() as i32;
-                            let logical_h = (h as f32 / scale).round() as i32;
-                            crate::android::command_channel::set_logical_size(logical_w.max(1), logical_h.max(1));
                             if let Some(server) = wayland_server.as_mut() {
-                                server.runtime.update_output_mode(w, h, None);
+                                let (actual_w, actual_h) = server.runtime.update_output_mode(w, h, None);
+                                backend_state.surface_size = (actual_w, actual_h);
                             }
                         }
                     }
@@ -335,21 +337,17 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
             flush_deferred_composite(&mut backend_state, &render_rx);
             render_background_tick(&backend_state);
 
-            // Update backend state caches for JNI diagnostics
-            let (lw, lh) = backend_state.surface_size;
+            // Update JNI diagnostics snapshot (read-only — never write cache from here)
+            let (sw, sh) = crate::android::command_channel::get_surface_size();
             let cached_scale = crate::android::command_channel::get_scale();
             let snapshot = format!(
                 "window_bound={}, surface={}x{}, wl_scale={:.1}, shm_enabled={}",
                 backend_state.native_window.is_some(),
-                lw, lh,
+                sw, sh,
                 cached_scale,
                 backend_state.shm_enabled,
             );
             crate::android::command_channel::set_backend_snapshot(snapshot);
-            crate::android::command_channel::set_surface_size(backend_state.surface_size.0, backend_state.surface_size.1);
-            let logical_w = (backend_state.surface_size.0 as f32 / cached_scale).round() as i32;
-            let logical_h = (backend_state.surface_size.1 as f32 / cached_scale).round() as i32;
-            crate::android::command_channel::set_logical_size(logical_w.max(1), logical_h.max(1));
             crate::android::command_channel::set_scroll_sensitivity(backend_state.scroll_sensitivity);
             crate::android::command_channel::set_physical_size(backend_state.physical_size_mm.0, backend_state.physical_size_mm.1);
 

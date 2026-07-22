@@ -437,8 +437,9 @@ pub struct AndroidSmithayState {
     pub gl_program: Option<u32>,
     pub gl_cursor_program: Option<u32>,
     pub surface_size: (i32, i32),
-    /// Safe-area top inset: camera notch / status bar height in pixels.
-    /// Touch Y coordinates must be offset by this before routing.
+    /// Safe-area offsets: status bar / camera notch insets in pixels.
+    /// Touch coordinates must be offset by these before routing.
+    pub x_offset: i32,
     pub y_offset: i32,
     pub physical_size_mm: (i32, i32),
     pub scroll_sensitivity: f32,
@@ -481,6 +482,7 @@ impl AndroidSmithayState {
             gl_program: None,
             gl_cursor_program: None,
             surface_size: (0, 0),
+            x_offset: 0,
             y_offset: 0,
             physical_size_mm: (155, 87),
             scroll_sensitivity: 1.0,

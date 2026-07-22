@@ -58,7 +58,7 @@ pub enum JniCommand {
     EnableDmabuf,
     SetRelativeSensitivity { value: f32 },
     SetPhysicalSize { width_mm: i32, height_mm: i32 },
-    SetYOffset { y_offset: i32 },
+    SetOffsets { x_offset: i32, y_offset: i32 },
     SuspendRendering,
     ResumeRendering,
     UpdateClipboard { text: String },

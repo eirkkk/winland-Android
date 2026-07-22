@@ -58,7 +58,6 @@ enable_xfce_wayland_experimental
 mkdir -p /etc/xdg/labwc
 cat > /etc/xdg/labwc/autostart <<'EOF_AUTOSTART'
 #!/bin/bash
-wlr-randr --output WL-1 --custom-mode 1080x2296
 EOF_AUTOSTART
 chmod +x /etc/xdg/labwc/autostart
 

@@ -18,3 +18,4 @@ terminal-view/.cxx/
 patches/build-libxkbcommon/libxkbcommon/
 .aider*
 winland-release.keystore
+fix/

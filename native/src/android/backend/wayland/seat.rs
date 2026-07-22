@@ -36,6 +36,8 @@ use smithay::utils::Logical;
 #[cfg(feature = "smithay_android")]
 use smithay::utils::Point;
 #[cfg(feature = "smithay_android")]
+use smithay::utils::Size;
+#[cfg(feature = "smithay_android")]
 use smithay::utils::Transform;
 #[cfg(feature = "smithay_android")]
 use smithay::utils::{Serial, SERIAL_COUNTER};
@@ -81,6 +83,10 @@ use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::shell::xdg::XdgShellState;
+#[cfg(feature = "smithay_android")]
+use smithay::wayland::shell::xdg::ToplevelSurface;
+#[cfg(feature = "smithay_android")]
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 #[cfg(feature = "smithay_android")]
 use smithay::wayland::shm::ShmState;
 #[cfg(feature = "smithay_android")]
@@ -725,10 +731,9 @@ impl ExtWorkspaceHandler for AndroidSeatRuntime {
 }
 
 impl AndroidSeatRuntime {
-    pub fn update_output_mode(&mut self, width: i32, height: i32, scale_override: Option<f64>) {
-        // wl_output.mode always reports surface_size (the full framebuffer).
-        // Use scale_override from wlr-output-management if provided,
-        // otherwise fall back to the Android-side cached scale.
+    pub fn update_output_mode(&mut self, width: i32, height: i32, scale_override: Option<f64>) -> (i32, i32) {
+        // Single source of truth: update caches inside this function.
+        // The render loop (compositor.rs) is a READER only — it never writes.
         self.physical_size = crate::android::command_channel::get_physical_size();
         self.screen_size = (width, height);
         let scale = scale_override.unwrap_or_else(compute_dpi_scale);
@@ -740,6 +745,11 @@ impl AndroidSeatRuntime {
             scale_override,
             self.physical_size
         );
+
+        // Update caches immediately — the single source of truth.
+        crate::android::command_channel::set_surface_size(width, height);
+        crate::android::command_channel::set_logical_size(width, height);
+
         let mode = OutputMode {
             size: (width, height).into(),
             refresh: 60000,
@@ -764,9 +774,32 @@ impl AndroidSeatRuntime {
         }
         self.output.set_preferred(mode);
         self.space.map_output(&self.output, (0, 0));
+
+        // Reconfigure all windows to the new output size.
+        let window_count = self.wl_to_window.len();
+        for (_wl_surface, window) in &self.wl_to_window {
+            if let Some(toplevel) = window.toplevel() {
+                toplevel.with_pending_state(|state| {
+                    state.size = Some(Size::from((width, height)));
+                    state.states.set(xdg_toplevel::State::Maximized);
+                    state.states.set(xdg_toplevel::State::Activated);
+                });
+                toplevel.send_configure();
+                log::info!("update_output_mode: sent configure to xdg_toplevel ({}x{})", width, height);
+            } else if let Some(x11) = window.x11_surface() {
+                let rect = smithay::utils::Rectangle::new(
+                    (0, self.reserved_top).into(),
+                    (width, height.saturating_sub(self.reserved_top + self.reserved_bottom)).into(),
+                );
+                let _ = x11.configure(rect);
+                log::info!("update_output_mode: sent configure to X11 surface ({}x{})", rect.size.w, rect.size.h);
+            }
+        }
+
         let pp = self.output.physical_properties();
         log::info!(
-            "SmithayRuntime: after output update make={:?} model={:?} phys=({},{}) cur_mode={:?}",
+            "SmithayRuntime: after output update windows={} make={:?} model={:?} phys=({},{}) cur_mode={:?}",
+            window_count,
             pp.make,
             pp.model,
             pp.size.w,
@@ -774,6 +807,7 @@ impl AndroidSeatRuntime {
             self.output.current_mode()
         );
         self.render_all();
+        (width, height)
     }
 
     pub(crate) fn usable_screen_size(&self) -> (i32, i32) {

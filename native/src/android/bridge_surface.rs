@@ -66,13 +66,17 @@ pub extern "system" fn Java_com_winland_server_NativeBridge_setResolution(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_winland_server_NativeBridge_setYOffset(
+pub extern "system" fn Java_com_winland_server_NativeBridge_setOffsets(
     _env: JNIEnv,
     _class: JClass,
+    x_offset: jint,
     y_offset: jint,
 ) {
     crate::android::command_channel::send_command(
-        crate::android::command_channel::JniCommand::SetYOffset { y_offset: y_offset.max(0) },
+        crate::android::command_channel::JniCommand::SetOffsets {
+            x_offset: x_offset.max(0),
+            y_offset: y_offset.max(0),
+        },
     );
 }
 

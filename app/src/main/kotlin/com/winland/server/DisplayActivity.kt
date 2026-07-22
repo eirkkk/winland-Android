@@ -21,6 +21,7 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
 import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
@@ -561,29 +562,36 @@ class DisplayActivity : ComponentActivity() {
                         },
                         onSurfaceChanged = { _, format, width, height ->
                             android.util.Log.i("DisplayActivity", "com.winland.server: surfaceChanged format=$format width=$width height=$height")
-                            val cutoutHeight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            var leftInset = 0; var topInset = 0; var rightInset = 0; var bottomInset = 0
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                                 val insets = window.decorView.rootWindowInsets
                                 if (insets != null) {
-                                    insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top
-                                } else 0
+                                    val sb = insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars())
+                                    leftInset = sb.left; topInset = sb.top
+                                    rightInset = sb.right; bottomInset = sb.bottom
+                                }
                             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                                window.decorView.rootWindowInsets?.displayCutout?.safeInsetTop ?: 0
-                            } else 0
-                            val safeWidth = width
-                            val safeHeight = if (cutoutHeight > 0) height - cutoutHeight else height
-                            if (cutoutHeight > 0) {
-                                android.util.Log.i("DisplayActivity", "Cutout height=$cutoutHeight, safe area=${safeWidth}x${safeHeight}")
+                                val cutout = window.decorView.rootWindowInsets?.displayCutout
+                                if (cutout != null) {
+                                    leftInset = cutout.safeInsetLeft; topInset = cutout.safeInsetTop
+                                    rightInset = cutout.safeInsetRight
+                                }
                             }
+                            android.util.Log.i("DisplayActivity",
+                                "Insets L=$leftInset T=$topInset R=$rightInset B=$bottomInset" +
+                                " surface=${width}x${height}")
                             val metrics = DisplayMetrics()
                             @Suppress("DEPRECATION")
                             windowManager.defaultDisplay.getRealMetrics(metrics)
-                            val physW = (metrics.widthPixels * 25.4f / metrics.xdpi).toInt()
-                            val physH = (metrics.heightPixels * 25.4f / metrics.ydpi).toInt()
+                            android.util.Log.i("DisplayActivity",
+                                "DPI debug: wPx=${metrics.widthPixels} hPx=${metrics.heightPixels}" +
+                                " xdpi=${metrics.xdpi} ydpi=${metrics.ydpi}" +
+                                " rot=${windowManager.defaultDisplay.rotation}")
+                            val physW = (width * 25.4f / metrics.xdpi).toInt().coerceAtLeast(1)
+                            val physH = (height * 25.4f / metrics.ydpi).toInt().coerceAtLeast(1)
                             runIfNativeLoaded("onSurfaceChanged") {
-                                NativeBridge.onSurfaceChanged(safeWidth, safeHeight, physW, physH)
-                                if (cutoutHeight > 0) {
-                                    NativeBridge.setYOffset(cutoutHeight)
-                                }
+                                NativeBridge.onSurfaceChanged(width, height, physW, physH)
+                                NativeBridge.setOffsets(leftInset, topInset)
                             }
                         }
                     )
@@ -815,9 +823,13 @@ class DisplayActivity : ComponentActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        // Surface resize is handled by SurfaceHolder.Callback.onSurfaceChanged().
-        // Immersive mode (WindowInsetsControllerCompat) is re-applied by the
-        // SideEffect block in the Compose layout on recomposition.
+        android.util.Log.i("DisplayActivity", "onConfigurationChanged: ${newConfig.orientation}")
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            window.insetsController?.let {
+                it.hide(android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.navigationBars())
+                it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }
     }
 
     private fun isModifierKey(keyCode: Int): Boolean = keyCode in listOf(
