@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
@@ -56,6 +57,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -104,6 +106,8 @@ private data class ResolutionOption(
     val label: String,
     val scale: Float
 )
+
+private enum class ConfirmAction { STOP, RESTART }
 
 @Composable
 fun WinlandDashboardScreen(
@@ -184,7 +188,7 @@ fun WinlandDashboardScreen(
                             .fillMaxSize()
                             .background(Color(0xFF282C34))
                             .imePadding()
-                            .padding(bottom = if (imeVisible) 0.dp else 84.dp)
+                            .windowInsetsBottomHeight(WindowInsets.navigationBars)
                     ) {
                         Box(modifier = Modifier.weight(1f)) {
                             AndroidView(
@@ -221,7 +225,7 @@ fun WinlandDashboardScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = 14.dp)
-                            .padding(bottom = 84.dp)
+                            .windowInsetsBottomHeight(WindowInsets.navigationBars)
                     ) {
                         activeOperationText?.let { op ->
                             ElevatedCard(
@@ -292,7 +296,6 @@ fun WinlandDashboardScreen(
                                 viewModel = viewModel,
                                 followSystemTheme = themeSettings.followSystemTheme,
                                 darkModeEnabled = themeSettings.darkModeEnabled,
-                                screenPreset = themeSettings.screenPreset,
                                 onThemeModeChanged = { followSystem, darkEnabled ->
                                     viewModel.updateThemeMode(followSystem, darkEnabled)
                                 },
@@ -424,7 +427,6 @@ private fun SettingsPanel(
     viewModel: MainViewModel,
     followSystemTheme: Boolean,
     darkModeEnabled: Boolean,
-    screenPreset: String,
     onThemeModeChanged: (Boolean, Boolean) -> Unit,
     onResolutionApplied: (String) -> Unit,
     onRequestUsb: () -> Unit,
@@ -438,13 +440,11 @@ private fun SettingsPanel(
     val displayInfo by viewModel.displayInfo.collectAsState()
     var localFollowSystem by remember { mutableStateOf(followSystemTheme) }
     var localDarkMode by remember { mutableStateOf(darkModeEnabled) }
-    var localScreenPreset by remember { mutableStateOf(screenPreset) }
     val installedDistros = remember { appContext.getInstalledDistros() }
 
-    LaunchedEffect(followSystemTheme, darkModeEnabled, screenPreset) {
+    LaunchedEffect(followSystemTheme, darkModeEnabled) {
         localFollowSystem = followSystemTheme
         localDarkMode = darkModeEnabled
-        localScreenPreset = screenPreset
     }
 
     val resolution1080p by remember {
@@ -457,10 +457,20 @@ private fun SettingsPanel(
             ResolutionOption("720p", 1.5f)
         }
     }
+    val resolution540p by remember {
+        derivedStateOf {
+            ResolutionOption("540p", 2.0f)
+        }
+    }
     var selectedResolutionLabel by rememberSaveable { mutableStateOf(resolution1080p.label) }
-    val selectedResolution = if (selectedResolutionLabel == resolution720p.label) resolution720p else resolution1080p
+    val selectedResolution = when (selectedResolutionLabel) {
+        resolution720p.label -> resolution720p
+        resolution540p.label -> resolution540p
+        else -> resolution1080p
+    }
 
     val scroll = rememberScrollState()
+    var confirmAction by remember { mutableStateOf<ConfirmAction?>(null) }
 
     Column(
         modifier = modifier
@@ -478,7 +488,7 @@ private fun SettingsPanel(
         ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Home, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Home, contentDescription = "Default Distro", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Default Distro", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 }
@@ -503,7 +513,7 @@ private fun SettingsPanel(
                         ) {
                             RadioButton(
                                 selected = isActive,
-                                onClick = { if (canSelect) viewModel.setActiveDistro(distro.id) },
+                                onClick = {},
                                 enabled = canSelect
                             )
                             Spacer(Modifier.width(12.dp))
@@ -528,14 +538,14 @@ private fun SettingsPanel(
         ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.DisplaySettings, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.DisplaySettings, contentDescription = "Display resolution", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Display", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 }
 
                 Spacer(Modifier.height(4.dp))
 
-                listOf(resolution1080p, resolution720p).forEach { option ->
+                listOf(resolution1080p, resolution720p, resolution540p).forEach { option ->
                     val isSelected = selectedResolution.label == option.label
                     Surface(
                         onClick = {
@@ -556,11 +566,7 @@ private fun SettingsPanel(
                         ) {
                             RadioButton(
                                 selected = isSelected,
-                                onClick = {
-                                    selectedResolutionLabel = option.label
-                                    NativeBridge.setScaleSafe(option.scale)
-                                    onResolutionApplied("${option.label}: scale=${option.scale}")
-                                }
+                                onClick = {}
                             )
                             Spacer(Modifier.width(12.dp))
                             Text(
@@ -578,7 +584,7 @@ private fun SettingsPanel(
         ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.DisplaySettings, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.DisplaySettings, contentDescription = "Display info", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Display Info", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 }
@@ -588,7 +594,7 @@ private fun SettingsPanel(
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Text("Window Bound", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Text(
-                        if (displayInfo.windowBound) "Yes" else "No",
+                        if (displayInfo.windowBound) "Yes" else if (displayInfo.logicalW == 0) "N/A" else "No",
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (displayInfo.windowBound) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                     )
@@ -596,28 +602,28 @@ private fun SettingsPanel(
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Text("Logical (native)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Text(
-                        "${displayInfo.logicalW} x ${displayInfo.logicalH}",
+                        if (displayInfo.logicalW == 0) "N/A" else "${displayInfo.logicalW} x ${displayInfo.logicalH}",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Text("Physical (viewport)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Text(
-                        "${displayInfo.physicalW} x ${displayInfo.physicalH}",
+                        if (displayInfo.physicalW == 0) "N/A" else "${displayInfo.physicalW} x ${displayInfo.physicalH}",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Text("Scale", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Text(
-                        "${"%.2f".format(displayInfo.scaleW)} x ${"%.2f".format(displayInfo.scaleH)}",
+                        if (displayInfo.logicalW == 0) "N/A" else "${"%.2f".format(displayInfo.scaleW)} x ${"%.2f".format(displayInfo.scaleH)}",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
                 Row(modifier = Modifier.fillMaxWidth()) {
                     Text("SHM", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Text(
-                        if (displayInfo.shmEnabled) "Enabled" else "Disabled",
+                        if (displayInfo.shmEnabled) "Enabled" else if (displayInfo.logicalW == 0) "N/A" else "Disabled",
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (displayInfo.shmEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                     )
@@ -628,7 +634,7 @@ private fun SettingsPanel(
         ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.DarkMode, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.DarkMode, contentDescription = "Appearance", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Appearance", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 }
@@ -683,7 +689,7 @@ private fun SettingsPanel(
         ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.PowerSettingsNew, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.PowerSettingsNew, contentDescription = "Runtime controls", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Runtime Controls", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 }
@@ -698,14 +704,14 @@ private fun SettingsPanel(
 
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
-                        onClick = onStopChroot,
+                        onClick = { confirmAction = ConfirmAction.STOP },
                         enabled = buttonsEnabled,
                         modifier = Modifier.weight(1f).heightIn(min = 52.dp)
                     ) {
                         Text("Stop")
                     }
                     Button(
-                        onClick = onRestartChroot,
+                        onClick = { confirmAction = ConfirmAction.RESTART },
                         enabled = buttonsEnabled,
                         modifier = Modifier.weight(1f).heightIn(min = 52.dp)
                     ) {
@@ -717,7 +723,7 @@ private fun SettingsPanel(
                     enabled = controlsEnabled,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
                 ) {
-                    Icon(Icons.Default.Usb, contentDescription = null)
+                    Icon(Icons.Default.Usb, contentDescription = "Request USB")
                     Spacer(Modifier.width(8.dp))
                     Text("USB")
                 }
@@ -727,7 +733,7 @@ private fun SettingsPanel(
         ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.TouchApp, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.TouchApp, contentDescription = "Input mode", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Input Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 }
@@ -753,7 +759,7 @@ private fun SettingsPanel(
                         ) {
                             RadioButton(
                                 selected = isSelected,
-                                onClick = { viewModel.updateInputMode(mode) }
+                                onClick = {}
                             )
                             Spacer(Modifier.width(12.dp))
                             Text(
@@ -768,7 +774,7 @@ private fun SettingsPanel(
                                     MainViewModel.InputMode.Trackpad -> Icons.Default.Laptop
                                     MainViewModel.InputMode.Mouse -> Icons.Default.Mouse
                                 },
-                                contentDescription = null,
+                                contentDescription = "${mode.name} mode",
                                 tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -776,6 +782,32 @@ private fun SettingsPanel(
                     }
                 }
             }
+        }
+
+        when (confirmAction) {
+            ConfirmAction.STOP -> AlertDialog(
+                onDismissRequest = { confirmAction = null },
+                title = { Text("Stop distro?") },
+                text = { Text("This will stop the running Linux desktop environment.") },
+                confirmButton = {
+                    Button(onClick = { confirmAction = null; onStopChroot() }) { Text("Stop") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmAction = null }) { Text("Cancel") }
+                }
+            )
+            ConfirmAction.RESTART -> AlertDialog(
+                onDismissRequest = { confirmAction = null },
+                title = { Text("Restart distro?") },
+                text = { Text("This will restart the Linux desktop environment.") },
+                confirmButton = {
+                    Button(onClick = { confirmAction = null; onRestartChroot() }) { Text("Restart") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmAction = null }) { Text("Cancel") }
+                }
+            )
+            null -> {}
         }
 
         Spacer(Modifier.height(20.dp))
@@ -787,10 +819,8 @@ private fun DistroCard(
     viewModel: MainViewModel,
     actions: WinlandDashboardActions
 ) {
-    val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val activeUiOperation by viewModel.activeUiOperation.collectAsState()
-    val activeDistroId by viewModel.activeDistroId.collectAsState()
     val isSettingUp = activeUiOperation == MainViewModel.UiOperation.SETUP
     val distroUiStates by viewModel.distroUiStates.collectAsState()
     val currentUiState = distroUiStates[distro.id] ?: MainViewModel.DistroUiState()
@@ -933,7 +963,7 @@ private fun DistroCard(
                         },
                         enabled = !operationLocked && !isDownloading && !isSettingUp && !isRunLaunching
                     ) {
-                        Icon(Icons.Default.Download, null)
+                        Icon(Icons.Default.Download, "Download/Install")
                         Spacer(Modifier.width(6.dp))
                         Text(
                             when {
@@ -973,7 +1003,7 @@ private fun DistroCard(
                             enabled = !operationLocked && !isRunLaunching && !isDownloading && !isSettingUp,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                         ) {
-                            Icon(Icons.Default.PlayArrow, null)
+                            Icon(Icons.Default.PlayArrow, "Run desktop")
                             Spacer(Modifier.width(6.dp))
                             Text(if (isRunLaunching) "Launching..." else "Run")
                         }

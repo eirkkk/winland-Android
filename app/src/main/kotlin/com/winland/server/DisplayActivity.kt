@@ -915,6 +915,7 @@ class DisplayActivity : ComponentActivity() {
         private var lastMoveDispatchUptimeMs: Long = 0L
         private var surfaceJob: Job? = null
         private var androidPointerHidden = false
+        private var cachedInputModeMask: Int = 1
 
         private val mainHandler = android.os.Handler(context.mainLooper)
 
@@ -942,7 +943,8 @@ class DisplayActivity : ComponentActivity() {
 
         private val inputModePrefsListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
             if (key == "input_mode_mask") {
-                val mode = prefs.getInt("input_mode_mask", 1)
+                cachedInputModeMask = prefs.getInt("input_mode_mask", 1)
+                val mode = cachedInputModeMask
                 if (mode == 4 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     pointerIcon = PointerIcon.getSystemIcon(context, PointerIcon.TYPE_NULL)
                     androidPointerHidden = true
@@ -958,11 +960,10 @@ class DisplayActivity : ComponentActivity() {
             isFocusable = true
             isFocusableInTouchMode = true
             activeSurfaceView = this
-            context.getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
-                .registerOnSharedPreferenceChangeListener(inputModePrefsListener)
-            val initialMode = context
-                .getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
-                .getInt("input_mode_mask", 1)
+            val prefs = context.getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
+            prefs.registerOnSharedPreferenceChangeListener(inputModePrefsListener)
+            cachedInputModeMask = prefs.getInt("input_mode_mask", 1)
+            val initialMode = cachedInputModeMask
             if (initialMode == 4 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 pointerIcon = PointerIcon.getSystemIcon(context, PointerIcon.TYPE_NULL)
                 androidPointerHidden = true
@@ -970,9 +971,7 @@ class DisplayActivity : ComponentActivity() {
         }
 
         private fun reapplyPointerIcon() {
-            val currentMode = context
-                .getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
-                .getInt("input_mode_mask", 1)
+            val currentMode = cachedInputModeMask
             if (currentMode == 4 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 if (!androidPointerHidden) {
                     pointerIcon = PointerIcon.getSystemIcon(context, PointerIcon.TYPE_NULL)
@@ -1028,9 +1027,7 @@ class DisplayActivity : ComponentActivity() {
             val actionMasked = event.actionMasked
 
             // BT mouse click: only in Mouse mode. Detect which button was pressed.
-            val mouseMode = context
-                .getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
-                .getInt("input_mode_mask", 1) == 4
+            val mouseMode = cachedInputModeMask == 4
             if (mouseMode && event.isFromSource(InputDevice.SOURCE_MOUSE) && NativeBridge.isLoaded()) {
                 val i = event.actionIndex
                 val x = event.getX(i)
@@ -1183,8 +1180,7 @@ class DisplayActivity : ComponentActivity() {
                                     // Was a real drag: send normal UP to release held button
                                     NativeBridge.sendTouchEvent(actionMasked, pointerId, x, y)
                                 } else {
-                                    val prefs = context.getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
-                                    val trackpadMode = prefs.getInt("input_mode_mask", 1) == 2
+                                    val trackpadMode = cachedInputModeMask == 2
                                     if (trackpadMode) {
                                         // Stationary long-press + lift in Trackpad → LEFT click
                                         NativeBridge.sendTouchEvent(
@@ -1231,8 +1227,7 @@ class DisplayActivity : ComponentActivity() {
             if (!holder.surface.isValid || !NativeBridge.isLoaded()) {
                 return super.onGenericMotionEvent(event)
             }
-            val prefs = context.getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
-            val mouseMode = prefs.getInt("input_mode_mask", 1) == 4
+            val mouseMode = cachedInputModeMask == 4
             if (!mouseMode) return super.onGenericMotionEvent(event)
             if (event.isFromSource(InputDevice.SOURCE_MOUSE)) {
                 when (event.actionMasked) {

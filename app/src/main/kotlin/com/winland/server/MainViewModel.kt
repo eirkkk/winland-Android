@@ -78,8 +78,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     data class ThemeSettings(
         val followSystemTheme: Boolean,
-        val darkModeEnabled: Boolean,
-        val screenPreset: String
+        val darkModeEnabled: Boolean
     )
 
     private val prefs = application.getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
@@ -162,8 +161,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun readThemeSettings(): ThemeSettings {
         return ThemeSettings(
             followSystemTheme = prefs.getBoolean("theme_follow_system", true),
-            darkModeEnabled = prefs.getBoolean("theme_dark_enabled", true),
-            screenPreset = prefs.getString("screen_preset", "Standard") ?: "Standard"
+            darkModeEnabled = prefs.getBoolean("theme_dark_enabled", true)
         )
     }
 
@@ -176,11 +174,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             followSystemTheme = followSystem,
             darkModeEnabled = darkEnabled
         )
-    }
-
-    fun updateScreenPreset(preset: String) {
-        prefs.edit().putString("screen_preset", preset).apply()
-        _themeSettings.value = _themeSettings.value.copy(screenPreset = preset)
     }
 
     fun setLogSearchQuery(query: String) {

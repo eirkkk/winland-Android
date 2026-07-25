@@ -150,7 +150,8 @@ class MainActivity : ComponentActivity() {
                                     val root = withContext(Dispatchers.IO) { RootUtils.isRootAvailable() }
                                     if (root) showRootDialog = false
                                 }
-                            }
+                            },
+                            onExit = { finish() }
                         )
                     }
 

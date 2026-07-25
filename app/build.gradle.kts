@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+import java.util.Properties
+
 
 android {
     namespace = "com.winland.server"
@@ -29,10 +31,19 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("${rootProject.projectDir}/winland-release.keystore")
-            storePassword = "winland123"
-            keyAlias = "winland"
-            keyPassword = "winland123"
+            val signingProps = rootProject.file("signing.properties")
+            if (signingProps.exists()) {
+                val props = Properties().apply { load(signingProps.inputStream()) }
+                storeFile = file(rootProject.file(props.getProperty("storeFile", "winland-release.keystore")))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            } else {
+                storeFile = file("${rootProject.projectDir}/winland-release.keystore")
+                storePassword = System.getenv("STORE_PASSWORD") ?: ""
+                keyAlias = System.getenv("KEY_ALIAS") ?: "winland"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: ""
+            }
         }
     }
 
@@ -91,7 +102,6 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.navigation:navigation-compose:2.7.7")
 
     // OkHttp for downloading
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

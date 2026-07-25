@@ -19,3 +19,4 @@ patches/build-libxkbcommon/libxkbcommon/
 .aider*
 winland-release.keystore
 fix/
+signing.properties
