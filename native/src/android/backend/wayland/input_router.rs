@@ -486,7 +486,8 @@ impl AndroidSeatRuntime {
         }
     }
 
-    fn handle_absolute_pointer_down(&mut self, id: i32, point: &TouchPoint, with_button: bool) {
+    fn handle_absolute_pointer_down(&mut self, id: i32, point: &TouchPoint, button: Option<u32>) {
+        log::info!("[MOUSE_DIAG] abs_ptr_down id={} x={:.0} y={:.0} button={:?}", id, point.x, point.y, button);
         if self.primary_touch_id.is_some() {
             return;
         }
@@ -515,23 +516,26 @@ impl AndroidSeatRuntime {
             },
         );
         pointer.frame(self);
-        if with_button {
-            let press_time = engine_timing::now_ms_u32();
-            pointer.button(
-                self,
-                &ButtonEvent {
-                    serial: SERIAL_COUNTER.next_serial(),
-                    time: press_time,
-                    button: 0x110,
-                    state: ButtonState::Pressed,
-                },
-            );
-            pointer.frame(self);
-            self.pointer_button_pressed = true;
-            engine_timing::emit_hybrid_trace(format!(
-                "AbsoluteMouse pointer_down id={} x={:.1} y={:.1} motion_t={} press_t={}",
-                id, point.x, point.y, motion_time, press_time
-            ));
+        if let Some(btn) = button {
+            if btn != 0 {
+                let press_time = engine_timing::now_ms_u32();
+                pointer.button(
+                    self,
+                    &ButtonEvent {
+                        serial: SERIAL_COUNTER.next_serial(),
+                        time: press_time,
+                        button: btn,
+                        state: ButtonState::Pressed,
+                    },
+                );
+                pointer.frame(self);
+                self.pointer_button_pressed = true;
+                self.mouse_pressed_button = btn;
+                engine_timing::emit_hybrid_trace(format!(
+                    "AbsoluteMouse pointer_down id={} x={:.1} y={:.1} button=0x{:x} motion_t={} press_t={}",
+                    id, point.x, point.y, btn, motion_time, press_time
+                ));
+            }
         } else {
             engine_timing::emit_hybrid_trace(format!(
                 "AbsoluteMouse pointer_motion_only id={} x={:.1} y={:.1}",
@@ -549,6 +553,7 @@ impl AndroidSeatRuntime {
         point: &TouchPoint,
         focus: &Option<WlSurface>,
     ) {
+        log::info!("[MOUSE_DIAG] abs_ptr_move id={} x={:.0} y={:.0}", id, point.x, point.y);
         if self.primary_touch_id != Some(id) {
             return;
         }
@@ -581,23 +586,26 @@ impl AndroidSeatRuntime {
     }
 
     fn handle_absolute_pointer_up(&mut self, id: i32) {
+        log::info!("[MOUSE_DIAG] abs_ptr_up id={}", id);
         if self.primary_touch_id != Some(id) {
             return;
         }
         if self.pointer_button_pressed {
             let pointer = self.pointer.clone();
             let release_time = engine_timing::now_ms_u32();
+            let btn = if self.mouse_pressed_button != 0 { self.mouse_pressed_button } else { 0x110 };
             pointer.button(
                 self,
                 &ButtonEvent {
                     serial: SERIAL_COUNTER.next_serial(),
                     time: release_time,
-                    button: 0x110,
+                    button: btn,
                     state: ButtonState::Released,
                 },
             );
             pointer.frame(self);
             self.pointer_button_pressed = false;
+            self.mouse_pressed_button = 0;
         }
         engine_timing::emit_hybrid_trace(format!("AbsoluteMouse pointer_up id={}", id));
         self.primary_touch_id = None;
@@ -915,6 +923,40 @@ impl AndroidSeatRuntime {
         self.last_seat_dispatch = format!("trackpad_rel dx={:.0} dy={:.0}", dx, dy);
     }
 
+    pub(crate) fn inject_mouse_position(&mut self, x: f32, y: f32, time: u32) {
+        if self.current_input_mode != WinlandInputMode::Mouse {
+            return;
+        }
+        log::info!("[MOUSE_DIAG] inject_mouse_position x={:.0} y={:.0} t={}", x, y, time);
+        if self.focused_surface.is_none() {
+            self.apply_forced_focus("mouse_pos");
+        }
+        let pointer = self.pointer.clone();
+        let location = self.logical_pt(x, y);
+        let pointer_focus = self.focused_surface.as_ref().map(|s| {
+            let origin = self
+                .wl_to_window
+                .get(s)
+                .and_then(|w| self.space.element_location(&WindowElement(w.clone())))
+                .map(|loc| (loc.x as f64, loc.y as f64).into())
+                .unwrap_or_else(|| (0.0, 0.0).into());
+            (s.clone(), origin)
+        });
+        pointer.motion(
+            self,
+            pointer_focus,
+            &PointerMotionEvent {
+                location,
+                serial: SERIAL_COUNTER.next_serial(),
+                time,
+            },
+        );
+        pointer.frame(self);
+        self.injected_events += 1;
+        engine_timing::emit_hybrid_trace(format!("MousePosition x={:.1} y={:.1} t={}", x, y, time));
+        self.last_seat_dispatch = format!("mouse_pos x={:.0} y={:.0}", x, y);
+    }
+
     pub(crate) fn inject_trackpad_click(&mut self, state: i32, button: i32, time: u32) {
         if self.current_input_mode != WinlandInputMode::Trackpad {
             return;
@@ -991,7 +1033,7 @@ impl AndroidSeatRuntime {
                         self.touch_two_finger_tap_active = true;
                     }
                     self.dispatch_touch_down(*id, point);
-                    self.handle_absolute_pointer_down(*id, point, true);
+                    self.handle_absolute_pointer_down(*id, point, Some(0x110));
                     self.handle_touch_down(*id, point, &focus);
                 }
                 RoutedInputEvent::TouchMove { id, point } => {
@@ -1099,7 +1141,11 @@ impl AndroidSeatRuntime {
             WinlandInputMode::Mouse => match event {
                 RoutedInputEvent::TouchDown { id, point } => {
                     self.mouse_last_pos = (point.x, point.y);
-                    self.handle_absolute_pointer_down(*id, point, true);
+                    self.handle_absolute_pointer_down(*id, point, Some(0x110));
+                }
+                RoutedInputEvent::TouchRightClick { id, point } => {
+                    self.mouse_last_pos = (point.x, point.y);
+                    self.handle_absolute_pointer_down(*id, point, Some(0x111));
                 }
                 RoutedInputEvent::TouchMove { id, point } => {
                     if self.primary_touch_id == Some(*id) && self.focused_surface.is_some() {
@@ -1156,12 +1202,13 @@ impl AndroidSeatRuntime {
                 RoutedInputEvent::TouchCancel { .. } => {
                     if let Some(primary) = self.primary_touch_id.take() {
                         let p = self.pointer.clone();
+                        let cancel_btn = if self.mouse_pressed_button != 0 { self.mouse_pressed_button } else { 0x110 };
                         p.button(
                             self,
                             &ButtonEvent {
                                 serial: SERIAL_COUNTER.next_serial(),
                                 time: engine_timing::now_ms_u32(),
-                                button: 0x110,
+                                button: cancel_btn,
                                 state: ButtonState::Released,
                             },
                         );
@@ -1172,6 +1219,7 @@ impl AndroidSeatRuntime {
                         ));
                     }
                     self.active_touch_ids.clear();
+                    self.mouse_pressed_button = 0;
                     self.last_seat_dispatch = format!("touch_cancel mouse focus={}", has_focus);
                 }
                 _ => {}
@@ -1258,13 +1306,13 @@ impl AndroidSeatRuntime {
             }
             RoutedInputEvent::TextCommit { text } => {
                 self.ensure_focus_for_non_pointer("text_commit");
+                log::info!("[KBD_DIAG] TextCommit text={:?}", text);
                 if let Some(keyboard) = self.keyboard.clone() {
                     if keyboard.is_grabbed() {
-                        log::debug!(
-                            "TextCommit: skipping inject — keyboard is grabbed by IME client"
-                        );
+                        log::info!("[KBD_DIAG] TextCommit is_grabbed=true — skipping inject");
                         return;
                     }
+                    log::info!("[KBD_DIAG] TextCommit is_grabbed=false — proceeding");
                 }
                 self.inject_text_commit(text);
             }
@@ -1393,6 +1441,7 @@ impl AndroidSeatRuntime {
     }
 
     pub(crate) fn inject_text_commit(&mut self, text: &str) {
+        log::info!("[KBD_DIAG] inject_text_commit text={:?} needs_protocol={}", text, crate::android::backend::wayland::arabic_input::needs_text_input_protocol(text));
         // Non‑Latin text → text‑input protocol path (Wayland apps)
         if crate::android::backend::wayland::arabic_input::needs_text_input_protocol(text) {
             if crate::android::backend::wayland::arabic_input::commit_text_via_protocol(self, text)
@@ -1436,10 +1485,9 @@ impl AndroidSeatRuntime {
                     self.inject_key_scancode(42 + 8, KeyState::Released);
                 }
             } else {
-                log::warn!(
-                    "inject_text_commit: unsupported char {:?} (U+{:04X}) — not in keymap",
-                    ch,
-                    ch as u32
+                log::info!(
+                    "[KBD_DIAG] find_keycode_for_char FAILED U+{:04X} char={:?}",
+                    ch as u32, ch
                 );
             }
         }
@@ -1487,6 +1535,7 @@ impl AndroidSeatRuntime {
     }
 
     pub(crate) fn inject_key_scancode(&mut self, scancode: u32, state: KeyState) {
+        log::info!("[KBD_DIAG] inject_key_scancode sc={} state={:?}", scancode, state);
         let Some(keyboard) = self.keyboard.clone() else {
             log::debug!(
                 "SmithayRuntime: dropping text commit because keyboard init is unavailable"

@@ -129,6 +129,8 @@ object NativeBridge {
     external fun sendTextInput(text: String)
     external fun sendRelativeMotion(dx: Float, dy: Float, time: Int)
     external fun sendTrackpadClick(state: Int, button: Int, time: Int)
+    external fun sendMousePosition(x: Float, y: Float, time: Int)
+    external fun sendMouseClick(action: Int, x: Float, y: Float, button: Int)
     external fun setX11SocketDir(dir: String)
     external fun notifyXwaylandReady(displayNumber: Int)
     external fun setInputMode(mode: Int)

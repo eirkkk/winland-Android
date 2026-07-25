@@ -311,4 +311,22 @@ EOF
 apt-get update
 apt-get -yq install firefox || true
 
+echo "INFO: Installing LabWC/wlroots binaries..."
+LABWC_DEB_URL="https://github.com/eirkkk/winland-Android/releases/download/main/labwc_0.7.1-1build1_arm64.deb"
+WLPROOTS_DEV_URL="https://github.com/eirkkk/winland-Android/releases/download/main/libwlroots-dev_0.17.1-2.1build1_arm64.deb"
+WLPROOTS12_URL="https://github.com/eirkkk/winland-Android/releases/download/main/libwlroots12t64_0.17.1-2.1build1_arm64.deb"
+for url in "$LABWC_DEB_URL" "$WLPROOTS_DEV_URL" "$WLPROOTS12_URL"; do
+    deb="/tmp/$(basename $url)"
+    if command -v wget >/dev/null 2>&1; then
+        wget -q "$url" -O "$deb" || echo "WARN: wget failed for $url"
+    elif command -v curl >/dev/null 2>&1; then
+        curl -sL "$url" -o "$deb" || echo "WARN: curl failed for $url"
+    fi
+    if [ -f "$deb" ] && [ -s "$deb" ]; then
+        dpkg -i "$deb" || apt-get -yq -f install || true
+    else
+        echo "WARN: Download failed for $(basename $url)"
+    fi
+done
+
 echo "Setup Finished. Xfce X11 (LabWC) environment is ready natively."

@@ -59,6 +59,20 @@ pub extern "system" fn Java_com_winland_server_NativeBridge_setInputMode(
 }
 
 #[no_mangle]
+pub extern "system" fn Java_com_winland_server_NativeBridge_sendMouseClick(
+    _env: JNIEnv,
+    _class: JClass,
+    action: jint,
+    x: jfloat,
+    y: jfloat,
+    button: jint,
+) {
+    crate::android::command_channel::send_command(
+        crate::android::command_channel::JniCommand::MouseClick { action, x, y, button },
+    );
+}
+
+#[no_mangle]
 pub extern "system" fn Java_com_winland_server_NativeBridge_setScrollSensitivity(
     _env: JNIEnv,
     _class: JClass,

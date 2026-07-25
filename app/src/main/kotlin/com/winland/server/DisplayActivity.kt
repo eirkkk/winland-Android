@@ -16,14 +16,17 @@ import android.text.InputType
 import android.util.Log
 import android.util.DisplayMetrics
 import android.view.HapticFeedbackConstants
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import android.view.PointerIcon
 import android.view.WindowManager
 import android.view.inputmethod.BaseInputConnection
+import android.content.SharedPreferences
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
@@ -890,6 +893,8 @@ class DisplayActivity : ComponentActivity() {
     @android.annotation.SuppressLint("ClickableViewAccessibility")
     private class WaylandInputSurfaceView(context: Context, private val onImeCommit: () -> Unit, private val ctrlActive: () -> Boolean, private val altActive: () -> Boolean) : SurfaceView(context) {
         companion object {
+            private const val MOUSE_POINTER_ID = -1
+
             private fun charToKeyCode(ch: Char): Int? = when (ch.uppercaseChar()) {
                 'A' -> KeyEvent.KEYCODE_A; 'B' -> KeyEvent.KEYCODE_B
                 'C' -> KeyEvent.KEYCODE_C; 'D' -> KeyEvent.KEYCODE_D
@@ -909,6 +914,7 @@ class DisplayActivity : ComponentActivity() {
         }
         private var lastMoveDispatchUptimeMs: Long = 0L
         private var surfaceJob: Job? = null
+        private var androidPointerHidden = false
 
         private val mainHandler = android.os.Handler(context.mainLooper)
 
@@ -934,11 +940,48 @@ class DisplayActivity : ComponentActivity() {
             gestureState = GestureState.DRAG_ACTIVE
         }
 
+        private val inputModePrefsListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+            if (key == "input_mode_mask") {
+                val mode = prefs.getInt("input_mode_mask", 1)
+                if (mode == 4 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    pointerIcon = PointerIcon.getSystemIcon(context, PointerIcon.TYPE_NULL)
+                    androidPointerHidden = true
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    pointerIcon = null
+                    androidPointerHidden = false
+                }
+            }
+        }
+
         init {
             holder.setFormat(android.graphics.PixelFormat.RGBA_8888)
             isFocusable = true
             isFocusableInTouchMode = true
             activeSurfaceView = this
+            context.getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
+                .registerOnSharedPreferenceChangeListener(inputModePrefsListener)
+            val initialMode = context
+                .getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
+                .getInt("input_mode_mask", 1)
+            if (initialMode == 4 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                pointerIcon = PointerIcon.getSystemIcon(context, PointerIcon.TYPE_NULL)
+                androidPointerHidden = true
+            }
+        }
+
+        private fun reapplyPointerIcon() {
+            val currentMode = context
+                .getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
+                .getInt("input_mode_mask", 1)
+            if (currentMode == 4 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                if (!androidPointerHidden) {
+                    pointerIcon = PointerIcon.getSystemIcon(context, PointerIcon.TYPE_NULL)
+                    androidPointerHidden = true
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && androidPointerHidden) {
+                pointerIcon = null
+                androidPointerHidden = false
+            }
         }
 
         fun setupLifecycle(
@@ -964,6 +1007,7 @@ class DisplayActivity : ComponentActivity() {
                 }
                 override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
                     onSurfaceChanged(holder, format, width, height)
+                    reapplyPointerIcon()
                 }
                 override fun surfaceDestroyed(holder: SurfaceHolder) {
                     Log.w("DisplayActivity", "com.winland.server: surfaceDestroyed (setupLifecycle)")
@@ -982,6 +1026,26 @@ class DisplayActivity : ComponentActivity() {
             }
 
             val actionMasked = event.actionMasked
+
+            // BT mouse click: only in Mouse mode. Detect which button was pressed.
+            val mouseMode = context
+                .getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
+                .getInt("input_mode_mask", 1) == 4
+            if (mouseMode && event.isFromSource(InputDevice.SOURCE_MOUSE) && NativeBridge.isLoaded()) {
+                val i = event.actionIndex
+                val x = event.getX(i)
+                val y = event.getY(i)
+                val button = when {
+                    event.getButtonState() and android.view.MotionEvent.BUTTON_SECONDARY != 0 -> 0x111
+                    event.getButtonState() and android.view.MotionEvent.BUTTON_TERTIARY != 0 -> 0x112
+                    else -> 0x110
+                }
+                NativeBridge.sendMouseClick(actionMasked, x, y, button)
+                if (actionMasked == android.view.MotionEvent.ACTION_UP) {
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                }
+                return true
+            }
 
             // Two-finger right-click: forward second finger to Rust state machine.
             // The was_armed logic in route_touch handles the context-menu trigger.
@@ -1163,8 +1227,40 @@ class DisplayActivity : ComponentActivity() {
             return true
         }
 
+        override fun onGenericMotionEvent(event: android.view.MotionEvent): Boolean {
+            if (!holder.surface.isValid || !NativeBridge.isLoaded()) {
+                return super.onGenericMotionEvent(event)
+            }
+            val prefs = context.getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
+            val mouseMode = prefs.getInt("input_mode_mask", 1) == 4
+            if (!mouseMode) return super.onGenericMotionEvent(event)
+            if (event.isFromSource(InputDevice.SOURCE_MOUSE)) {
+                when (event.actionMasked) {
+                    android.view.MotionEvent.ACTION_HOVER_MOVE -> {
+                        val x = event.getX(event.actionIndex)
+                        val y = event.getY(event.actionIndex)
+                        val now = (SystemClock.uptimeMillis() and 0x7FFFFFFF).toInt()
+                        NativeBridge.sendMousePosition(x, y, now)
+                        return true
+                    }
+                    android.view.MotionEvent.ACTION_SCROLL -> {
+                        val vScroll = event.getAxisValue(android.view.MotionEvent.AXIS_VSCROLL)
+                        val hScroll = event.getAxisValue(android.view.MotionEvent.AXIS_HSCROLL)
+                        if (vScroll != 0f || hScroll != 0f) {
+                            val now = (SystemClock.uptimeMillis() and 0x7FFFFFFF).toInt()
+                            NativeBridge.sendRelativeMotion(hScroll * 40f, vScroll * -40f, now)
+                        }
+                        return true
+                    }
+                }
+            }
+            return super.onGenericMotionEvent(event)
+        }
+
         override fun onDetachedFromWindow() {
             if (activeSurfaceView === this) activeSurfaceView = null
+            context.getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
+                .unregisterOnSharedPreferenceChangeListener(inputModePrefsListener)
             super.onDetachedFromWindow()
         }
 

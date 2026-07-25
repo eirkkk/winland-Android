@@ -157,3 +157,20 @@ pub extern "system" fn Java_com_winland_server_NativeBridge_sendTrackpadClick(
         },
     );
 }
+
+#[no_mangle]
+pub extern "system" fn Java_com_winland_server_NativeBridge_sendMousePosition(
+    _env: JNIEnv,
+    _class: JClass,
+    x: jfloat,
+    y: jfloat,
+    time: jint,
+) {
+    crate::android::command_channel::send_command(
+        crate::android::command_channel::JniCommand::MousePosition {
+            x,
+            y,
+            time: time as u32,
+        },
+    );
+}

@@ -109,6 +109,36 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
             while let Ok(cmd) = cmd_rx.try_recv() {
                 match cmd {
                     JniCommand::TouchInput { action, id, x, y } => {
+                        // MOUSE_POINTER_ID (-1): BT mouse click, bypass route_touch in Mouse mode.
+                        if id == -1 {
+                            if let Some(server) = wayland_server.as_mut() {
+                                if server.runtime.current_input_mode != WinlandInputMode::Mouse {
+                                    continue;
+                                }
+                                let x_offset = backend_state.x_offset as f32;
+                                let y_offset = backend_state.y_offset as f32;
+                                let adjusted_x = (x - x_offset).max(0.0);
+                                let adjusted_y = (y - y_offset).max(0.0);
+                                let logical_w = backend_state.surface_size.0;
+                                let logical_h = backend_state.surface_size.1;
+                                let point = crate::android::backend::wayland::input::TouchPoint {
+                                    x: adjusted_x, y: adjusted_y,
+                                    x_norm: if logical_w > 0 { (adjusted_x / logical_w as f32).clamp(0.0, 1.0) } else { 0.0 },
+                                    y_norm: if logical_h > 0 { (adjusted_y / logical_h as f32).clamp(0.0, 1.0) } else { 0.0 },
+                                };
+                                let event = match action {
+                                    0 | 5 => RoutedInputEvent::TouchDown { id: 0, point },
+                                    2 => RoutedInputEvent::TouchMove { id: 0, point },
+                                    1 | 6 => RoutedInputEvent::TouchUp { id: 0 },
+                                    3 => RoutedInputEvent::TouchCancel { id: 0 },
+                                    _ => continue,
+                                };
+                                server.runtime.inject_routed_event(&event);
+                                crate::android::backend::wayland::seat_injector::record_injection(&event);
+                            }
+                            continue;
+                        }
+
                         let x_offset = backend_state.x_offset as f32;
                         let y_offset = backend_state.y_offset as f32;
                         let adjusted_x = (x - x_offset).max(0.0);
@@ -173,6 +203,41 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
                     JniCommand::RelativeMotion { dx, dy, time } => {
                         if let Some(server) = wayland_server.as_mut() {
                             server.runtime.inject_trackpad_relative(dx, dy, time);
+                        }
+                    }
+                    JniCommand::MousePosition { x, y, time } => {
+                        if let Some(server) = wayland_server.as_mut() {
+                            let adjusted_x = (x - backend_state.x_offset as f32).max(0.0);
+                            let adjusted_y = (y - backend_state.y_offset as f32).max(0.0);
+                            server.runtime.inject_mouse_position(adjusted_x, adjusted_y, time);
+                        }
+                    }
+                    JniCommand::MouseClick { action, x, y, button } => {
+                        if let Some(server) = wayland_server.as_mut() {
+                            if server.runtime.current_input_mode != WinlandInputMode::Mouse {
+                                continue;
+                            }
+                            let x_offset = backend_state.x_offset as f32;
+                            let y_offset = backend_state.y_offset as f32;
+                            let adjusted_x = (x - x_offset).max(0.0);
+                            let adjusted_y = (y - y_offset).max(0.0);
+                            let logical_w = backend_state.surface_size.0;
+                            let logical_h = backend_state.surface_size.1;
+                            let point = crate::android::backend::wayland::input::TouchPoint {
+                                x: adjusted_x, y: adjusted_y,
+                                x_norm: if logical_w > 0 { (adjusted_x / logical_w as f32).clamp(0.0, 1.0) } else { 0.0 },
+                                y_norm: if logical_h > 0 { (adjusted_y / logical_h as f32).clamp(0.0, 1.0) } else { 0.0 },
+                            };
+                            let event: RoutedInputEvent = match action {
+                                0 | 5 if button == 0x111 => RoutedInputEvent::TouchRightClick { id: 0, point },
+                                0 | 5 => RoutedInputEvent::TouchDown { id: 0, point },
+                                2 => RoutedInputEvent::TouchMove { id: 0, point },
+                                1 | 6 => RoutedInputEvent::TouchUp { id: 0 },
+                                3 => RoutedInputEvent::TouchCancel { id: 0 },
+                                _ => continue,
+                            };
+                            server.runtime.inject_routed_event(&event);
+                            crate::android::backend::wayland::seat_injector::record_injection(&event);
                         }
                     }
                     JniCommand::TrackpadClick { state, button, time } => {

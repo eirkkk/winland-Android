@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
 use std::sync::mpsc;
-use std::sync::{RwLock, OnceLock};
+use std::sync::{RwLock, OnceLock, Mutex};
 
 /// A raw ANativeWindow pointer that is safe to send between threads
 /// (Android's ANativeWindow is reference-counted and thread-safe).
@@ -21,9 +21,14 @@ pub enum JniCommand {
     /// Trackpad: relative cursor motion (dx/dy in view pixels, time in ms).
     /// Used only in exclusive Trackpad mode.
     RelativeMotion { dx: f32, dy: f32, time: u32 },
+    /// BT mouse: absolute position (hover/move). Bypasses route_touch gesture state.
+    MousePosition { x: f32, y: f32, time: u32 },
     /// Trackpad: click event (state: 1=pressed, 0=released, button: 0x110=left, 0x111=right).
     /// Used only in exclusive Trackpad mode.
     TrackpadClick { state: i32, button: i32, time: u32 },
+    /// BT mouse: click with explicit button (0x110=left, 0x111=right).
+    /// Replaces TouchInput { id: -1 } for Mouse mode.
+    MouseClick { action: i32, x: f32, y: f32, button: i32 },
 
     // ── Lifecycle (with response) ──
     ShutdownCompositor {
@@ -83,21 +88,26 @@ pub enum JniCommand {
 }
 
 /// Global sender for dispatching commands to the compositor thread.
-pub static COMMAND_TX: OnceLock<crossbeam_channel::Sender<JniCommand>> = OnceLock::new();
+/// Uses `Mutex<Option<...>>` instead of `OnceLock` so the channel can be replaced
+/// when the compositor is stopped and re-spawned (e.g. re-entry).
+pub static COMMAND_TX: Mutex<Option<crossbeam_channel::Sender<JniCommand>>> = Mutex::new(None);
 
-/// Set the global command channel sender (called once when the compositor spawns).
+/// Set the global command channel sender (called each time the compositor spawns).
 pub fn set_command_tx(tx: crossbeam_channel::Sender<JniCommand>) {
-    let _ = COMMAND_TX.set(tx);
+    *COMMAND_TX.lock().unwrap() = Some(tx);
 }
 
 /// Send a command to the compositor thread. Returns `false` if the channel is not set up yet.
 pub fn send_command(cmd: JniCommand) -> bool {
-    COMMAND_TX.get().map(|tx| tx.send(cmd).is_ok()).unwrap_or(false)
+    COMMAND_TX.lock().unwrap()
+        .as_ref()
+        .map(|tx| tx.send(cmd).is_ok())
+        .unwrap_or(false)
 }
 
 /// Check whether the command channel is initialized.
 pub fn is_initialized() -> bool {
-    COMMAND_TX.get().is_some()
+    COMMAND_TX.lock().unwrap().is_some()
 }
 
 /// Cached flag: whether any Wayland clients are currently connected to the compositor.
@@ -383,7 +393,7 @@ mod tests {
     #[test]
     fn global_channel_initialization() {
         let (tx, rx) = crossbeam_channel::unbounded::<JniCommand>();
-        let prev = COMMAND_TX.get().cloned();
+        let prev = COMMAND_TX.lock().unwrap().clone();
 
         set_command_tx(tx);
         assert!(send_command(JniCommand::EnableShm));
