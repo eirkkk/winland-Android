@@ -46,6 +46,12 @@ Winland Server is a full-featured Wayland compositor that runs natively on Andro
 - Runtime stats overlay
 - Debug logging via Android logcat
 
+### 📦 Chroot Environment
+- **Ubuntu 24.04 (Noble)** and **Kali Nethunter** rootfs support
+- **XFCE desktop** session running on **LabWC** (Wayland compositor) with GPU-accelerated compositing via Zink+Turnip
+- Automatic rootfs download, extraction, and dependency installation
+- BusyBox-based bootstrap for reliable chroot setup
+
 ---
 
 ## 📋 Requirements
@@ -113,6 +119,24 @@ cp native/target/aarch64-linux-android/release/libuniffi_winland_core.so \
 ```
 
 See [BUILD_ARM64.md](BUILD_ARM64.md) for detailed ARM64 build instructions.
+
+---
+
+## How It Works
+
+1. **Bootstrapping**: The app downloads a compressed Linux rootfs (Ubuntu or Kali) and extracts it into the app's private data directory.
+
+2. **Chroot Setup**: With root privileges, the app mounts `/proc`, `/sys`, `/dev`, and bind-mounts the Wayland socket and audio FIFO into the chroot.
+
+3. **Compositor**: The Rust-based Smithay compositor creates a Wayland socket inside the app's data directory. This socket is bind-mounted into the chroot so Linux GUI apps can connect to it.
+
+4. **Desktop Launch**: Inside the chroot, LabWC (a Wayland compositor) starts as the window manager with GPU-accelerated compositing via Zink+Turnip, XFCE as the desktop environment, and XWayland for X11 app compatibility.
+
+5. **Input Routing**: Touch events, keyboard input, and mouse events from Android are forwarded through UniFFI to the Rust compositor, which injects them into the Wayland protocol.
+
+6. **Audio Bridge (Native)**: PulseAudio inside the chroot writes PCM audio to a named FIFO; the Rust audio bridge reads it via Oboe (AAudio) for zero-copy playback on Android speakers. For microphone input, Oboe captures 44.1kHz mono 16-bit audio from the Android mic and writes to a second FIFO, which PulseAudio reads as the `AndroidMic` source — all natively with no streaming overhead.
+
+7. **Rendering**: The compositor renders directly onto an Android `SurfaceView` using Vulkan (Zink/Turnip) or OpenGL ES via HardwareBuffers.
 
 ---
 
