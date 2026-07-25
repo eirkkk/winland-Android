@@ -188,7 +188,7 @@ fun WinlandDashboardScreen(
                             .fillMaxSize()
                             .background(Color(0xFF282C34))
                             .imePadding()
-                            .windowInsetsBottomHeight(WindowInsets.navigationBars)
+                            .padding(bottom = if (imeVisible) 0.dp else 84.dp)
                     ) {
                         Box(modifier = Modifier.weight(1f)) {
                             AndroidView(
@@ -225,7 +225,7 @@ fun WinlandDashboardScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = 14.dp)
-                            .windowInsetsBottomHeight(WindowInsets.navigationBars)
+                            .padding(bottom = 84.dp)
                     ) {
                         activeOperationText?.let { op ->
                             ElevatedCard(

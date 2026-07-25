@@ -33,6 +33,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import kotlinx.coroutines.Job
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -223,6 +224,7 @@ class DisplayActivity : ComponentActivity() {
         distroId = intent.getStringExtra("distro_id") ?: "ubuntu"
         Log.i("WinlandDiag", "onCreate: Entry. Distro: $distroId. Native libraries loaded: ${NativeBridge.isLoaded()}")
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         markAsCurrentActivity()
 
