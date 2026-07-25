@@ -39,10 +39,8 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -67,6 +65,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -125,6 +124,7 @@ fun WinlandDashboardScreen(
     val logsPaused by viewModel.logsPaused.collectAsState()
     val logSearchQuery by viewModel.logSearchQuery.collectAsState()
     val displayedLogs by viewModel.filteredLogs.collectAsState()
+    val glassModeEnabled by viewModel.glassModeEnabled.collectAsState()
 
     LaunchedEffect(distros) {
         viewModel.ensureDistroStates(distros.map { it.id })
@@ -161,6 +161,7 @@ fun WinlandDashboardScreen(
         }
     }
 
+    CompositionLocalProvider(LocalGlassMode provides glassModeEnabled) {
     Scaffold(
         topBar = {
             if (selectedTab != DashboardTab.Terminal) {
@@ -228,11 +229,11 @@ fun WinlandDashboardScreen(
                             .padding(bottom = 84.dp)
                     ) {
                         activeOperationText?.let { op ->
-                            ElevatedCard(
+                            GlassCard(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 10.dp, bottom = 6.dp),
-                                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f))
+                                shape = RoundedCornerShape(12.dp)
                             ) {
                                 Text(
                                     text = "Active operation: $op. Buttons are locked until completion.",
@@ -324,6 +325,7 @@ fun WinlandDashboardScreen(
             }
         }
     }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -337,9 +339,9 @@ private fun LogPanel(
     onSearchChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    ElevatedCard(
+    GlassCard(
         modifier = modifier,
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+        shape = RoundedCornerShape(14.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(10.dp)) {
             Row(
@@ -485,7 +487,7 @@ private fun SettingsPanel(
             modifier = Modifier.padding(top = 6.dp)
         )
 
-        ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Home, contentDescription = "Default Distro", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
@@ -497,13 +499,11 @@ private fun SettingsPanel(
                     val isInstalled = distro.id in installedDistros
                     val isActive = distro.id == activeDistroId
                     val canSelect = isInstalled
-                    Surface(
+                    GlassSurface(
                         onClick = { if (canSelect) viewModel.setActiveDistro(distro.id) },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surface,
-                        tonalElevation = if (isActive) 2.dp else 0.dp,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = canSelect
+                        selected = isActive,
+                        enabled = canSelect,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier
@@ -535,7 +535,7 @@ private fun SettingsPanel(
             }
         }
 
-        ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.DisplaySettings, contentDescription = "Display resolution", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
@@ -547,15 +547,13 @@ private fun SettingsPanel(
 
                 listOf(resolution1080p, resolution720p, resolution540p).forEach { option ->
                     val isSelected = selectedResolution.label == option.label
-                    Surface(
+                    GlassSurface(
                         onClick = {
                             selectedResolutionLabel = option.label
                             NativeBridge.setScaleSafe(option.scale)
                             onResolutionApplied("${option.label}: scale=${option.scale}")
                         },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surface,
-                        tonalElevation = if (isSelected) 2.dp else 0.dp,
+                        selected = isSelected,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -580,8 +578,7 @@ private fun SettingsPanel(
             }
         }
 
-
-        ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.DisplaySettings, contentDescription = "Display info", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
@@ -631,7 +628,7 @@ private fun SettingsPanel(
             }
         }
 
-        ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.DarkMode, contentDescription = "Appearance", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
@@ -657,11 +654,11 @@ private fun SettingsPanel(
                     )
                     themeOptions.forEach { option ->
                         val isSelected = option.isSelected()
-                        Surface(
+                        GlassSurface(
                             onClick = option.onClick,
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.weight(1f)
+                            selected = isSelected,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Column(
                                 modifier = Modifier.padding(vertical = 12.dp),
@@ -683,10 +680,24 @@ private fun SettingsPanel(
                         }
                     }
                 }
+
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.LightMode, contentDescription = "Glass mode", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Glass Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = viewModel.glassModeEnabled.collectAsState().value,
+                        onCheckedChange = { viewModel.setGlassModeEnabled(it) }
+                    )
+                }
             }
         }
 
-        ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.PowerSettingsNew, contentDescription = "Runtime controls", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
@@ -729,11 +740,11 @@ private fun SettingsPanel(
                 }
             }
         }
-
-        ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.TouchApp, contentDescription = "Input mode", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.TouchApp, contentDescription = "Input mode",
+                    tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Input Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 }
@@ -744,11 +755,9 @@ private fun SettingsPanel(
 
                 MainViewModel.InputMode.entries.forEach { mode ->
                     val isSelected = currentMode == mode
-                    Surface(
+                    GlassSurface(
                         onClick = { viewModel.updateInputMode(mode) },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surface,
-                        tonalElevation = if (isSelected) 2.dp else 0.dp,
+                        selected = isSelected,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -813,6 +822,7 @@ private fun SettingsPanel(
         Spacer(Modifier.height(20.dp))
     }
 }
+
 @Composable
 private fun DistroCard(
     distro: LinuxDistro,
@@ -875,12 +885,9 @@ private fun DistroCard(
         }
     }
 
-    ElevatedCard(
+    GlassCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+        shape = RoundedCornerShape(24.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
