@@ -2,6 +2,7 @@ package com.winland.server.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,10 +17,13 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -40,7 +44,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
-
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -50,10 +55,10 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -63,9 +68,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,6 +92,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.winland.server.DashboardTab
 import com.winland.server.LinuxDistro
 import com.winland.server.MainViewModel
+import java.util.UUID
 import com.winland.server.NativeBridge
 import com.winland.server.engine.ChrootInstaller
 import com.winland.server.utils.getInstalledDistros
@@ -108,6 +114,15 @@ private data class ResolutionOption(
 
 private enum class ConfirmAction { STOP, RESTART }
 
+private data class TerminalSessionTab(
+    val id: String = UUID.randomUUID().toString(),
+    val label: MutableState<String>,
+    val distroId: String,
+    val isCustomName: MutableState<Boolean> = mutableStateOf(false),
+    val ctrlActive: MutableState<Boolean> = mutableStateOf(false),
+    val altActive: MutableState<Boolean> = mutableStateOf(false)
+)
+
 @Composable
 fun WinlandDashboardScreen(
     distros: List<LinuxDistro>,
@@ -124,8 +139,6 @@ fun WinlandDashboardScreen(
     val logsPaused by viewModel.logsPaused.collectAsState()
     val logSearchQuery by viewModel.logSearchQuery.collectAsState()
     val displayedLogs by viewModel.filteredLogs.collectAsState()
-    val glassModeEnabled by viewModel.glassModeEnabled.collectAsState()
-
     LaunchedEffect(distros) {
         viewModel.ensureDistroStates(distros.map { it.id })
     }
@@ -146,22 +159,46 @@ fun WinlandDashboardScreen(
     }
 
     val embeddedTerminal = remember { EmbeddedTerminal(appContext) }
-    var ctrlActive by remember { mutableStateOf(false) }
-    var altActive by remember { mutableStateOf(false) }
-    val terminalDistroId = activeDistroId ?: "ubuntu"
     val keyboardController = LocalSoftwareKeyboardController.current
+
+    var sessionTabs by remember {
+        mutableStateOf(
+            listOf(TerminalSessionTab(label = mutableStateOf("Session 1"), distroId = activeDistroId ?: "ubuntu"))
+        )
+    }
+    var activeSessionId by remember { mutableStateOf(sessionTabs.first().id) }
+    val activeSession = remember(sessionTabs, activeSessionId) {
+        sessionTabs.first { it.id == activeSessionId }
+    }
+
+    fun addSession() {
+        val newTab = TerminalSessionTab(
+            label = mutableStateOf("Session ${sessionTabs.size + 1}"),
+            distroId = activeSession.distroId
+        )
+        sessionTabs = sessionTabs + newTab
+        activeSessionId = newTab.id
+    }
+
+    fun closeSession(tabId: String) {
+        if (sessionTabs.size <= 1) return
+        val closedIndex = sessionTabs.indexOfFirst { it.id == tabId }
+        sessionTabs = sessionTabs.filter { it.id != tabId }
+        embeddedTerminal.finishSession(tabId)
+        if (activeSessionId == tabId) {
+            val newIndex = closedIndex.coerceAtMost(sessionTabs.size - 1)
+            activeSessionId = sessionTabs[newIndex].id
+        }
+        var counter = 0
+        sessionTabs = sessionTabs.map { tab ->
+            if (!tab.isCustomName.value) tab.copy(label = mutableStateOf("Session ${++counter}"), ctrlActive = tab.ctrlActive, altActive = tab.altActive, isCustomName = tab.isCustomName) else tab
+        }
+    }
 
     LaunchedEffect(selectedTab) {
         keyboardController?.hide()
     }
 
-    LaunchedEffect(terminalDistroId) {
-        if (selectedTab == DashboardTab.Terminal) {
-            embeddedTerminal.startSession(terminalDistroId)
-        }
-    }
-
-    CompositionLocalProvider(LocalGlassMode provides glassModeEnabled) {
     Scaffold(
         topBar = {
             if (selectedTab != DashboardTab.Terminal) {
@@ -178,9 +215,11 @@ fun WinlandDashboardScreen(
                     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
 
                     LaunchedEffect(Unit) {
-                        embeddedTerminal.onBarStateChanged = { c, a ->
-                            ctrlActive = c
-                            altActive = a
+                        embeddedTerminal.onBarStateChanged = { sessionId, c, a ->
+                            sessionTabs.find { it.id == sessionId }?.let { tab ->
+                                tab.ctrlActive.value = c
+                                tab.altActive.value = a
+                            }
                         }
                     }
 
@@ -191,28 +230,86 @@ fun WinlandDashboardScreen(
                             .imePadding()
                             .padding(bottom = if (imeVisible) 0.dp else 84.dp)
                     ) {
+                        var showRenameDialog by remember { mutableStateOf<TerminalSessionTab?>(null) }
+
+                        fun renameSession(tabId: String, newLabel: String) {
+                            if (newLabel.isBlank()) return
+                            val tab = sessionTabs.first { it.id == tabId }
+                            tab.label.value = newLabel.trim()
+                            tab.isCustomName.value = true
+                        }
+
+                        showRenameDialog?.let { tab ->
+                            var textValue by remember(tab.id) { mutableStateOf(tab.label.value) }
+                            AlertDialog(
+                                onDismissRequest = { showRenameDialog = null },
+                                title = { Text("Rename Session", color = Color.White) },
+                                containerColor = Color(0xFF1A1D23),
+                                text = {
+                                    OutlinedTextField(
+                                        value = textValue,
+                                        onValueChange = { textValue = it },
+                                        singleLine = true,
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            cursorColor = Color.White,
+                                            focusedBorderColor = Color(0xFF61AFEF),
+                                            unfocusedBorderColor = Color(0xFF3E4451)
+                                        )
+                                    )
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        renameSession(tab.id, textValue)
+                                        showRenameDialog = null
+                                    }) {
+                                        Text("Rename", color = Color(0xFF61AFEF))
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showRenameDialog = null }) {
+                                        Text("Cancel", color = Color.Gray)
+                                    }
+                                }
+                            )
+                        }
+
+                        SessionSwitcherBar(
+                            sessionTabs = sessionTabs,
+                            activeSessionId = activeSessionId,
+                            onSelectTab = { activeSessionId = it },
+                            onCloseTab = { closeSession(it) },
+                            onAddTab = { addSession() },
+                            onRenameRequest = { showRenameDialog = it },
+                            modifier = Modifier.fillMaxWidth()
+                        )
                         Box(modifier = Modifier.weight(1f)) {
                             AndroidView(
                                 factory = { _ ->
                                     val view = embeddedTerminal.createView()
-                                    embeddedTerminal.startSession(terminalDistroId)
+                                    embeddedTerminal.startSession(activeSessionId, activeSession.distroId)
                                     view
                                 },
-                                update = {},
+                                update = { view ->
+                                    embeddedTerminal.attachSession(view, activeSessionId, activeSession.distroId)
+                                },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
                         if (imeVisible) {
                             TerminalExtraKeysBar(
-                                ctrlActive = ctrlActive,
-                                altActive = altActive,
+                                ctrlActive = activeSession.ctrlActive.value,
+                                altActive = activeSession.altActive.value,
                                 onCtrlToggle = {
-                                    ctrlActive = !ctrlActive
-                                    embeddedTerminal.barCtrlActive = ctrlActive
+                                    val newVal = !activeSession.ctrlActive.value
+                                    activeSession.ctrlActive.value = newVal
+                                    embeddedTerminal.setModifierState(activeSessionId, newVal, activeSession.altActive.value)
                                 },
                                 onAltToggle = {
-                                    altActive = !altActive
-                                    embeddedTerminal.barAltActive = altActive
+                                    val newVal = !activeSession.altActive.value
+                                    activeSession.altActive.value = newVal
+                                    embeddedTerminal.setModifierState(activeSessionId, activeSession.ctrlActive.value, newVal)
                                 },
                                 onKey = { key ->
                                     embeddedTerminal.sendSpecialKey(key)
@@ -324,7 +421,6 @@ fun WinlandDashboardScreen(
                 )
             }
         }
-    }
     }
 }
 
@@ -681,19 +777,6 @@ private fun SettingsPanel(
                     }
                 }
 
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.LightMode, contentDescription = "Glass mode", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Glass Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    Switch(
-                        checked = viewModel.glassModeEnabled.collectAsState().value,
-                        onCheckedChange = { viewModel.setGlassModeEnabled(it) }
-                    )
-                }
             }
         }
 
@@ -1136,6 +1219,108 @@ private fun ModernNavigationBar(selectedTab: DashboardTab, onTabSelected: (Dashb
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SessionSwitcherBar(
+    sessionTabs: List<TerminalSessionTab>,
+    activeSessionId: String,
+    onSelectTab: (String) -> Unit,
+    onCloseTab: (String) -> Unit,
+    onAddTab: () -> Unit,
+    onRenameRequest: (TerminalSessionTab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val activeLabel = sessionTabs.first { it.id == activeSessionId }.label.value
+    var expanded by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color(0xFF1A1D23))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Box {
+            Row(
+                modifier = Modifier
+                    .clickable { expanded = true }
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(activeLabel, color = Color.White, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Switch session",
+                    tint = Color.White
+                )
+            }
+
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.background(Color(0xFF1A1D23))
+            ) {
+                sessionTabs.forEach { tab ->
+                    val isActive = tab.id == activeSessionId
+                    DropdownMenuItem(
+                        onClick = {
+                            onSelectTab(tab.id)
+                            expanded = false
+                        },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    if (isActive) "\u25CF" else "\u25CB",
+                                    color = if (isActive) Color(0xFF61AFEF) else Color.Gray,
+                                    fontSize = 12.sp
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    tab.label.value,
+                                    color = Color.White,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        },
+                        trailingIcon = {
+                            if (sessionTabs.size > 1) {
+                                IconButton(
+                                    onClick = { onCloseTab(tab.id) },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Close session",
+                                        tint = Color.Gray.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    )
+                }
+                HorizontalDivider(color = Color(0xFF3E4451))
+                DropdownMenuItem(
+                    onClick = { onAddTab(); expanded = false },
+                    text = {
+                        Text("\uFF0B New Session", color = Color(0xFF61AFEF))
+                    }
+                )
+            }
+        }
+        IconButton(onClick = {
+            onRenameRequest(sessionTabs.first { it.id == activeSessionId })
+        }) {
+            Icon(
+                Icons.Default.Edit,
+                contentDescription = "Rename session",
+                tint = Color.White
+            )
         }
     }
 }

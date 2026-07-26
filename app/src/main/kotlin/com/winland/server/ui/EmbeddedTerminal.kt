@@ -19,13 +19,14 @@ import com.termux.view.TerminalViewClient
 import com.winland.server.engine.ChrootInstaller
 import com.winland.server.utils.getUnifiedFilesDir
 import com.winland.server.utils.getUnifiedRootfsDir
-import com.winland.server.utils.getUnifiedTmpDir
 
 class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, TerminalViewClient {
 
     companion object {
         private const val TAG = "EmbeddedTerminal"
-        private val sessions: MutableMap<String, TerminalSession?> = mutableMapOf()
+        private val sessions = mutableMapOf<String, TerminalSession>()
+        private val sessionDistros = mutableMapOf<String, String>()
+        private val distroSessionCount = mutableMapOf<String, Int>()
     }
 
     var terminalView: TerminalView? = null
@@ -44,7 +45,7 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
     val currentDistroId: String get() = terminalDistroId
     var barCtrlActive: Boolean = false
     var barAltActive: Boolean = false
-    var onBarStateChanged: ((ctrl: Boolean, alt: Boolean) -> Unit)? = null
+    var onBarStateChanged: ((sessionId: String, ctrl: Boolean, alt: Boolean) -> Unit)? = null
 
     @android.annotation.SuppressLint("ClickableViewAccessibility")
     fun createView(): TerminalView {
@@ -58,8 +59,6 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
         view.isFocusableInTouchMode = true
         view.setTypeface(android.graphics.Typeface.MONOSPACE)
 
-        // Prevent Compose/ViewGroup parents from intercepting touch events meant for the
-        // terminal (scroll history, pinch-to-zoom, text selection drags).
         view.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN,
@@ -70,7 +69,7 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
                 android.view.MotionEvent.ACTION_CANCEL ->
                     v.parent?.requestDisallowInterceptTouchEvent(false)
             }
-            false // pass through to TerminalView.onTouchEvent()
+            false
         }
 
         terminalView = view
@@ -78,77 +77,60 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
     }
 
     private fun applyColorScheme() {
-        // One Dark theme
         val props = java.util.Properties()
         props["foreground"] = "#ABB2BF"
         props["background"] = "#282C34"
         props["cursor"] = "#528BFF"
-        // Normal colors
-        props["color0"] = "#282C34"   // black
-        props["color1"] = "#E06C75"   // red
-        props["color2"] = "#98C379"   // green
-        props["color3"] = "#E5C07B"   // yellow
-        props["color4"] = "#61AFEF"   // blue
-        props["color5"] = "#C678DD"   // magenta
-        props["color6"] = "#56B6C2"   // cyan
-        props["color7"] = "#ABB2BF"   // white
-        // Bright colors
-        props["color8"] = "#5C6370"   // bright black
-        props["color9"] = "#E06C75"   // bright red
-        props["color10"] = "#98C379"  // bright green
-        props["color11"] = "#E5C07B"  // bright yellow
-        props["color12"] = "#61AFEF"  // bright blue
-        props["color13"] = "#C678DD"  // bright magenta
-        props["color14"] = "#56B6C2"  // bright cyan
-        props["color15"] = "#FFFFFF"  // bright white
+        props["color0"] = "#282C34"
+        props["color1"] = "#E06C75"
+        props["color2"] = "#98C379"
+        props["color3"] = "#E5C07B"
+        props["color4"] = "#61AFEF"
+        props["color5"] = "#C678DD"
+        props["color6"] = "#56B6C2"
+        props["color7"] = "#ABB2BF"
+        props["color8"] = "#5C6370"
+        props["color9"] = "#E06C75"
+        props["color10"] = "#98C379"
+        props["color11"] = "#E5C07B"
+        props["color12"] = "#61AFEF"
+        props["color13"] = "#C678DD"
+        props["color14"] = "#56B6C2"
+        props["color15"] = "#FFFFFF"
         com.termux.terminal.TerminalColors.COLOR_SCHEME.updateWith(props)
     }
 
-    private fun getCurrentSession(): TerminalSession? = sessions[terminalDistroId]
+    private fun getSession(sessionId: String): TerminalSession? = sessions[sessionId]
 
-    private fun attachCurrentSession() {
-        val tv = terminalView ?: return
-        val session = getCurrentSession()
-        if (session != null) {
-            tv.attachSession(session)
-            tv.requestFocus()
-            onSessionStateChanged?.invoke(true)
-        }
-    }
-
-    fun startSession(distroId: String? = null) {
-        val id = distroId ?: terminalDistroId
-        terminalDistroId = id
+    fun startSession(sessionId: String, distroId: String) {
+        terminalDistroId = distroId
         val tv = terminalView ?: return
 
-        val existing = sessions[id]
+        val existing = sessions[sessionId]
         if (existing != null && existing.isRunning()) {
-            Log.i(TAG, "Reusing existing session for distro $id (pid=${existing.pid})")
             existing.updateTerminalSessionClient(this)
             tv.attachSession(existing)
             tv.requestFocus()
             onSessionStateChanged?.invoke(true)
             return
         }
-        Log.i(TAG, "Creating new session for distro $id (existing=${existing != null}, running=${existing?.isRunning()})")
 
         ensurePtmxAccess()
 
         val physicalFilesDir = context.filesDir.absolutePath
         val unifiedFilesDir = context.getUnifiedFilesDir()
-        val rootfsDir = context.getUnifiedRootfsDir(id)
-        val status = ChrootInstaller.getChrootStatus(context, id)
+        val rootfsDir = context.getUnifiedRootfsDir(distroId)
+        val status = ChrootInstaller.getChrootStatus(context, distroId)
 
         val shellBinary = findShellBinary()
         val isSu = shellBinary.endsWith("/su")
-        Log.i(TAG, "Using shell: $shellBinary (su=$isSu, chrootReady=${status.ready})")
 
         val args: Array<String>
         val cwd: String
 
         if (status.ready && isSu) {
-            val chrootScriptFile = java.io.File(physicalFilesDir, "chroot-dashboard_$id.sh")
-            val chrootCommand = when (id) {
+            val chrootScriptFile = java.io.File(physicalFilesDir, "chroot-dashboard_${distroId}_${sessionId}.sh")
+            val chrootCommand = when (distroId) {
                 "kali" -> buildChrootCommandKali(rootfsDir, unifiedFilesDir)
                 else -> buildChrootCommandGeneric(rootfsDir, unifiedFilesDir)
             }
@@ -173,7 +155,9 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
 
         try {
             val session = TerminalSession(shellBinary, cwd, args, env, null, this)
-            sessions[id] = session
+            sessions[sessionId] = session
+            sessionDistros[sessionId] = distroId
+
             tv.attachSession(session)
             tv.requestFocus()
             onSessionStateChanged?.invoke(true)
@@ -185,6 +169,38 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create terminal session", e)
         }
+    }
+
+    fun attachSession(view: TerminalView, sessionId: String, distroId: String) {
+        terminalDistroId = distroId
+        var session = sessions[sessionId]
+        if (session == null || !session.isRunning()) {
+            startSession(sessionId, distroId)
+            session = sessions[sessionId]
+        }
+        session?.let {
+            it.updateTerminalSessionClient(this)
+            view.attachSession(it)
+            view.onScreenUpdated()
+            view.requestFocus()
+            onSessionStateChanged?.invoke(true)
+        }
+    }
+
+    fun finishSession(sessionId: String) {
+        val session = sessions.remove(sessionId)
+        session?.finishIfRunning()
+        val distroId = sessionDistros.remove(sessionId)
+        if (distroId != null) {
+            val count = ((distroSessionCount[distroId] ?: 1) - 1).coerceAtLeast(0)
+            if (count <= 0) distroSessionCount.remove(distroId)
+            else distroSessionCount[distroId] = count
+        }
+    }
+
+    fun setModifierState(sessionId: String, ctrl: Boolean, alt: Boolean) {
+        barCtrlActive = ctrl
+        barAltActive = alt
     }
 
     private fun ensurePtmxAccess() {
@@ -202,8 +218,10 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
     }
 
     fun destroy() {
-        sessions.values.forEach { it?.finishIfRunning() }
+        sessions.values.forEach { it.finishIfRunning() }
         sessions.clear()
+        sessionDistros.clear()
+        distroSessionCount.clear()
         terminalView = null
     }
 
@@ -214,14 +232,16 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
     }
 
     fun restartSession() {
+        val tv = terminalView ?: return
         sessionFinishedHandled = true
-        val old = sessions[terminalDistroId]
-        old?.finishIfRunning()
-        sessions[terminalDistroId] = null
+        sessions.values.forEach { it.finishIfRunning() }
+        sessions.clear()
+        sessionDistros.clear()
+        distroSessionCount.clear()
         restartCount = 0
         sessionFinishedHandled = false
         onSessionStateChanged?.invoke(false)
-        terminalView?.post { startSession(terminalDistroId) }
+        tv.post { startSession("default", terminalDistroId) }
     }
 
     fun increaseFontSize() {
@@ -241,12 +261,13 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
     }
 
     fun sendSpecialKey(key: String) {
-        val session = getCurrentSession() ?: return
+        val tv = terminalView ?: return
+        val session = tv.currentSession ?: return
         when (key) {
             "ESC" -> session.write(byteArrayOf(27), 0, 1)
             "TAB" -> session.write(byteArrayOf(9), 0, 1)
-            "CTRL" -> { /* handled as modifier */ }
-            "ALT" -> { /* handled as modifier */ }
+            "CTRL" -> {}
+            "ALT" -> {}
             "HOME" -> session.write("\u001b[H".toByteArray(), 0, 3)
             "END" -> session.write("\u001b[F".toByteArray(), 0, 3)
             "PGUP" -> session.write("\u001b[5~".toByteArray(), 0, 4)
@@ -274,7 +295,6 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
         val tv = terminalView ?: return
         val shellBinary = findShellBinary()
         val isSu = shellBinary.endsWith("/su")
-        Log.i(TAG, "Starting fallback session with: $shellBinary")
         val env = arrayOf(
             "TERM=xterm-256color",
             "HOME=/root",
@@ -284,7 +304,8 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
         val args = if (isSu) arrayOf<String>() else arrayOf<String>()
         try {
             val session = TerminalSession(shellBinary, "/", args, env, null, this)
-            sessions[terminalDistroId] = session
+            val id = "fallback_${System.currentTimeMillis()}"
+            sessions[id] = session
             tv.attachSession(session)
             tv.requestFocus()
         } catch (e: Exception) {
@@ -481,21 +502,26 @@ fi
         val exitCode = finishedSession.exitStatus
         Log.w(TAG, "Session finished with exit code: $exitCode (restart count: $restartCount/$MAX_RESTARTS)")
         onSessionStateChanged?.invoke(false)
-        if (sessionFinishedHandled) return
 
-        val finishedDistro = sessions.entries.firstOrNull { it.value === finishedSession }?.key
-        if (finishedDistro != null) {
-            sessions[finishedDistro] = null
+        val entry = sessions.entries.firstOrNull { it.value === finishedSession }
+        if (entry != null) {
+            sessions.remove(entry.key)
+            val distroId = sessionDistros.remove(entry.key)
+            if (distroId != null) {
+                val count = ((distroSessionCount[distroId] ?: 1) - 1).coerceAtLeast(0)
+                if (count <= 0) distroSessionCount.remove(distroId)
+                else distroSessionCount[distroId] = count
+            }
         }
 
-        if (finishedDistro != terminalDistroId) return
+        if (sessionFinishedHandled) return
 
         sessionFinishedHandled = true
         if (restartCount < MAX_RESTARTS) {
             restartCount++
             terminalView?.postDelayed({
                 sessionFinishedHandled = false
-                startSession(terminalDistroId)
+                startSession("default", terminalDistroId)
             }, 1000)
         } else {
             Log.e(TAG, "Max restarts reached, not restarting")
@@ -521,7 +547,8 @@ fi
             val clip = clipboard.primaryClip
             if (clip != null && clip.itemCount > 0) {
                 val text = clip.getItemAt(0).coerceToText(context).toString()
-                getCurrentSession()?.emulator?.paste(text)
+                val tv = terminalView
+                tv?.currentSession?.emulator?.paste(text)
             }
         } catch (e: Exception) {
             android.util.Log.w("EmbeddedTerminal", "Clipboard paste denied (not in focus)", e)
@@ -611,7 +638,7 @@ fi
         if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DEL) {
             if (barCtrlActive) {
                 barCtrlActive = false
-                onBarStateChanged?.invoke(false, barAltActive)
+                onBarStateChanged?.invoke("", false, barAltActive)
             }
         }
         return false
@@ -620,11 +647,11 @@ fi
     override fun onKeyUp(keyCode: Int, e: KeyEvent): Boolean {
         if (barCtrlActive && keyCode != KeyEvent.KEYCODE_CTRL_LEFT && keyCode != KeyEvent.KEYCODE_CTRL_RIGHT) {
             barCtrlActive = false
-            onBarStateChanged?.invoke(false, barAltActive)
+            onBarStateChanged?.invoke("", false, barAltActive)
         }
         if (barAltActive && keyCode != KeyEvent.KEYCODE_ALT_LEFT && keyCode != KeyEvent.KEYCODE_ALT_RIGHT) {
             barAltActive = false
-            onBarStateChanged?.invoke(barCtrlActive, false)
+            onBarStateChanged?.invoke("", barCtrlActive, false)
         }
         return false
     }
@@ -641,11 +668,11 @@ fi
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean {
         if (ctrlDown && barCtrlActive) {
             barCtrlActive = false
-            onBarStateChanged?.invoke(false, barAltActive)
+            onBarStateChanged?.invoke("", false, barAltActive)
         }
         if (barAltActive) {
             barAltActive = false
-            onBarStateChanged?.invoke(barCtrlActive, false)
+            onBarStateChanged?.invoke("", barCtrlActive, false)
         }
         return false
     }

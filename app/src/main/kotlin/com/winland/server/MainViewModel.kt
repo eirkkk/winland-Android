@@ -99,14 +99,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedTab = MutableStateFlow(DashboardTab.Home)
     val selectedTab: StateFlow<DashboardTab> = _selectedTab.asStateFlow()
 
-    private val _glassModeEnabled = MutableStateFlow(prefs.getBoolean("glass_mode_enabled", false))
-    val glassModeEnabled: StateFlow<Boolean> = _glassModeEnabled.asStateFlow()
-
-    fun setGlassModeEnabled(enabled: Boolean) {
-        _glassModeEnabled.value = enabled
-        prefs.edit().putBoolean("glass_mode_enabled", enabled).apply()
-    }
-
     private val _logsPaused = MutableStateFlow(false)
     val logsPaused: StateFlow<Boolean> = _logsPaused.asStateFlow()
 
