@@ -36,6 +36,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import kotlinx.coroutines.Job
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,6 +63,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
@@ -401,11 +404,63 @@ class DisplayActivity : ComponentActivity() {
             }
 
             items(regularKeys) { key ->
+                // Arrows auto-repeat on long-press; other keys fire once.
+                // Tap path stays identical to the original (fire on release);
+                // press observation never consumes gestures (bar stays
+                // scrollable, taps unaffected).
+                val repeatable = key == "↑" || key == "↓" || key == "←" || key == "→"
+                val keyInteractionSource = remember { MutableInteractionSource() }
+                val keyScope = rememberCoroutineScope()
+                var keyRepeatJob: Job? = remember { null }
+                var keySuppressClick by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) {
+                    // Always drain so emissions never stall the button;
+                    // repeat logic runs only for arrows.
+                    keyInteractionSource.interactions.collect { interaction ->
+                        if (!repeatable) return@collect
+                        when (interaction) {
+                                is PressInteraction.Press -> {
+                                    keyRepeatJob?.cancel()
+                                    keySuppressClick = false
+                                    keyRepeatJob = keyScope.launch {
+                                        delay(400)
+                                        keySuppressClick = true
+                                        while (true) {
+                                            simulateKey(key)
+                                            delay(50)
+                                        }
+                                    }
+                                }
+                                is PressInteraction.Release -> {
+                                    keyRepeatJob?.cancel()
+                                    keyRepeatJob = null
+                                }
+                                is PressInteraction.Cancel -> {
+                                    keyRepeatJob?.cancel()
+                                    keyRepeatJob = null
+                                    keySuppressClick = false
+                                }
+                            }
+                        }
+                    }
                 Button(
                     onClick = {
-                        view.hapticTap()
-                        simulateKey(key)
+                        if (!repeatable) {
+                            view.hapticTap()
+                            simulateKey(key)
+                        } else {
+                            // Release after hold: repeats already fired.
+                            // Quick tap: fire exactly once (as before).
+                            keyRepeatJob?.cancel()
+                            keyRepeatJob = null
+                            if (keySuppressClick) keySuppressClick = false
+                            else {
+                                view.hapticTap()
+                                simulateKey(key)
+                            }
+                        }
                     },
+                    interactionSource = keyInteractionSource,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
                 ) {

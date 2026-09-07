@@ -3,7 +3,13 @@ package com.winland.server.ui
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -1603,10 +1609,10 @@ private fun TerminalExtraKeysBar(
         ExtraKeyButton("-", onKey)
         ExtraKeyButton("|", onKey)
         ExtraKeyButton("~", onKey)
-        ExtraKeyButton("◀", onClick = { onKey("LEFT") })
-        ExtraKeyButton("▲", onClick = { onKey("UP") })
-        ExtraKeyButton("▼", onClick = { onKey("DOWN") })
-        ExtraKeyButton("▶", onClick = { onKey("RIGHT") })
+        ExtraKeyButton("◀", onClick = { onKey("LEFT") }, repeatable = true)
+        ExtraKeyButton("▲", onClick = { onKey("UP") }, repeatable = true)
+        ExtraKeyButton("▼", onClick = { onKey("DOWN") }, repeatable = true)
+        ExtraKeyButton("▶", onClick = { onKey("RIGHT") }, repeatable = true)
         ExtraKeyButton("HM", onClick = { onKey("HOME") })
         ExtraKeyButton("EN", onClick = { onKey("END") })
         ExtraKeyButton("PU", onClick = { onKey("PGUP") })
@@ -1619,14 +1625,63 @@ private fun TerminalExtraKeysBar(
 private fun ExtraKeyButton(
     label: String,
     onKey: (String) -> Unit = {},
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    repeatable: Boolean = false
 ) {
     val haptics = LocalHapticFeedback.current
+    // Quiet fire shared by tap and repeat paths.
+    val fireQuiet = { onClick?.invoke() ?: onKey(label) }
+    val fire = {
+        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        fireQuiet()
+    }
+    // Repeat machinery (arrows only). The press stream is ALWAYS drained so
+    // emissions never stall the button; repeat logic runs only when repeatable.
+    val interactionSource = remember { MutableInteractionSource() }
+    val scope = rememberCoroutineScope()
+    var repeatJob: Job? = remember { null }
+    var suppressClick by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        interactionSource.interactions.collect { interaction ->
+            if (!repeatable) return@collect
+            when (interaction) {
+                is PressInteraction.Press -> {
+                    repeatJob?.cancel()
+                    suppressClick = false
+                    repeatJob = scope.launch {
+                        delay(400)
+                        suppressClick = true
+                        while (true) {
+                            fireQuiet()
+                            delay(50)
+                        }
+                    }
+                }
+                is PressInteraction.Release -> {
+                    repeatJob?.cancel()
+                    repeatJob = null
+                }
+                is PressInteraction.Cancel -> {
+                    repeatJob?.cancel()
+                    repeatJob = null
+                    suppressClick = false
+                }
+            }
+        }
+    }
     Surface(
         onClick = {
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            onClick?.invoke() ?: onKey(label)
+            if (!repeatable) {
+                fire()
+            } else {
+                // Release after hold: repeats already fired, skip the extra.
+                // Quick tap: nothing fired yet, fire exactly once (as before).
+                repeatJob?.cancel()
+                repeatJob = null
+                if (suppressClick) suppressClick = false else fire()
+            }
         },
+        interactionSource = interactionSource,
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.height(40.dp)
