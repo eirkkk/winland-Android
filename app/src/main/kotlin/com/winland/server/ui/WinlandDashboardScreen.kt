@@ -3,6 +3,7 @@ package com.winland.server.ui
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -101,6 +102,13 @@ import java.util.UUID
 import com.winland.server.NativeBridge
 import com.winland.server.engine.ChrootInstaller
 import com.winland.server.utils.getInstalledDistros
+
+// Semantic action colors: Run = green, Restart = blue, Stop = red.
+// Explicit hues readable on both dark and light themes (stepping stone
+// toward the full blue-identity redesign, where these become theme roles).
+private val RunGreen = Color(0xFF43A047)
+private val RestartBlue = Color(0xFF1E88E5)
+private val StopRed = Color(0xFFE53935)
 
 data class WinlandDashboardActions(
     val onRequestUsb: () -> Unit,
@@ -895,14 +903,17 @@ private fun SettingsPanel(
                     OutlinedButton(
                         onClick = { confirmAction = ConfirmAction.STOP },
                         enabled = buttonsEnabled,
-                        modifier = Modifier.weight(1f).heightIn(min = 52.dp)
+                        modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = StopRed),
+                        border = BorderStroke(1.dp, StopRed)
                     ) {
                         Text("Stop")
                     }
                     Button(
                         onClick = { confirmAction = ConfirmAction.RESTART },
                         enabled = buttonsEnabled,
-                        modifier = Modifier.weight(1f).heightIn(min = 52.dp)
+                        modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = RestartBlue, contentColor = Color.White)
                     ) {
                         Text("Restart")
                     }
@@ -1027,7 +1038,10 @@ private fun SettingsPanel(
                 title = { Text("Stop distro?") },
                 text = { Text("This will stop the running Linux desktop environment.") },
                 confirmButton = {
-                    Button(onClick = { confirmAction = null; onStopChroot() }) { Text("Stop") }
+                    Button(
+                        onClick = { confirmAction = null; onStopChroot() },
+                        colors = ButtonDefaults.buttonColors(containerColor = StopRed, contentColor = Color.White)
+                    ) { Text("Stop") }
                 },
                 dismissButton = {
                     TextButton(onClick = { confirmAction = null }) { Text("Cancel") }
@@ -1038,7 +1052,10 @@ private fun SettingsPanel(
                 title = { Text("Restart distro?") },
                 text = { Text("This will restart the Linux desktop environment.") },
                 confirmButton = {
-                    Button(onClick = { confirmAction = null; onRestartChroot() }) { Text("Restart") }
+                    Button(
+                        onClick = { confirmAction = null; onRestartChroot() },
+                        colors = ButtonDefaults.buttonColors(containerColor = RestartBlue, contentColor = Color.White)
+                    ) { Text("Restart") }
                 },
                 dismissButton = {
                     TextButton(onClick = { confirmAction = null }) { Text("Cancel") }
@@ -1219,11 +1236,19 @@ private fun DistroCard(
                     }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = actions.onDistroStop) {
+                        OutlinedButton(
+                            onClick = actions.onDistroStop,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = StopRed),
+                            border = BorderStroke(1.dp, StopRed)
+                        ) {
                             Text("Stop")
                         }
 
-                        OutlinedButton(onClick = actions.onDistroRestart) {
+                        OutlinedButton(
+                            onClick = actions.onDistroRestart,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = RestartBlue),
+                            border = BorderStroke(1.dp, RestartBlue)
+                        ) {
                             Text("Restart")
                         }
 
@@ -1241,7 +1266,7 @@ private fun DistroCard(
                                 actions.onDistroRun(distro.id)
                             },
                             enabled = !operationLocked && !isRunLaunching && !isDownloading && !isSettingUp,
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            colors = ButtonDefaults.buttonColors(containerColor = RunGreen, contentColor = Color.White)
                         ) {
                             Icon(Icons.Default.PlayArrow, "Run desktop")
                             Spacer(Modifier.width(6.dp))
