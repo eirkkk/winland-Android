@@ -571,7 +571,13 @@ class DisplayActivity : ComponentActivity() {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                                 val insets = window.decorView.rootWindowInsets
                                 if (insets != null) {
-                                    val sb = insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars())
+                                    // Visibility-respecting insets: the desktop runs
+                                    // fullscreen immersive (bars hidden), so
+                                    // getInsetsIgnoringVisibility reports phantom
+                                    // bar heights that do not match the visible
+                                    // layout — subtracting them shifts taps
+                                    // (e.g. slightly up in landscape).
+                                    val sb = insets.getInsets(WindowInsets.Type.statusBars())
                                     leftInset = sb.left; topInset = sb.top
                                     rightInset = sb.right; bottomInset = sb.bottom
                                 }
