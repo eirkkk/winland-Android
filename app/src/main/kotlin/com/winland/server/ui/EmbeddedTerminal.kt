@@ -65,7 +65,14 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
     fun refreshTheme(dark: Boolean) {
         forceDarkTheme = dark
         applyColorScheme(dark)
+        // Live sessions snapshot the palette at creation (mCurrentColors);
+        // push the new defaults into them so text recolors instantly instead
+        // of keeping the previous theme (e.g. dark text on dark background).
+        for (session in sessions.values) {
+            runCatching { session.emulator?.mColors?.reset() }
+        }
         terminalView?.setBackgroundColor(backgroundColor(dark))
+        terminalView?.invalidate()
     }
 
     @android.annotation.SuppressLint("ClickableViewAccessibility")
