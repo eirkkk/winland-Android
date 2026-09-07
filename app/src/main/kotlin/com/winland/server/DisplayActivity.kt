@@ -602,7 +602,12 @@ class DisplayActivity : ComponentActivity() {
                             val physH = (height * 25.4f / metrics.ydpi).toInt().coerceAtLeast(1)
                             runIfNativeLoaded("onSurfaceChanged") {
                                 NativeBridge.onSurfaceChanged(width, height, physW, physH)
-                                NativeBridge.setOffsets(leftInset, topInset)
+                                // The SurfaceView is fullscreen at window origin:
+                                // view pixels == surface pixels == output
+                                // pixels, so no inset offset must be subtracted.
+                                // Window insets (status bar/cutout) were shifting
+                                // taps upward (hitting the option above). Force 0.
+                                NativeBridge.setOffsets(0, 0)
                             }
                         }
                     )
