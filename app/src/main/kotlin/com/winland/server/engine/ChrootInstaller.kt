@@ -494,7 +494,9 @@ object ChrootInstaller {
                 operation = "preBootKillDirect"
             )
         }
-        if (RootUtils.isRootAvailable()) {
+        // Cache the root probe: used for both the kill and the wipe below.
+        val hasRoot = RootUtils.isRootAvailable()
+        if (hasRoot) {
             runCatching {
                 executeRootCommand(
                     command = killScript,
@@ -513,6 +515,40 @@ object ChrootInstaller {
             val x11Dir = File("$tmpDir/.X11-unix")
             val removed = x11Dir.listFiles()?.onEach { it.deleteRecursively() }?.size ?: 0
             _logFlow.tryEmit("INFO: cleaned $removed stale .X11-unix entries")
+        }
+
+        // Wipe the previous session's hidden files (.*) and logs (*.log)
+        // from the shared tmp dir, in BOTH switch directions. Root-owned
+        // (uid-0) leftovers from chroot mode cannot be removed by the app
+        // UID, so this MUST run as root whenever root is available —
+        // including when the user just enabled root while in proot mode,
+        // or is leaving chroot for proot (root must stay enabled until
+        // this cleanup runs on the first boot after the switch).
+        // Only hidden + *.log are removed. Preserved: wayland-0* (host
+        // compositor), audio_bridge/, pulse files, *.deb, setup scripts.
+        _logFlow.tryEmit("INFO: wiping stale tmp logs/hidden files...")
+        val wipeScript = """
+            T="$tmpDir"
+            rm -f "${'$'}T"/*.log 2>/dev/null || true
+            find "${'$'}T" -maxdepth 1 -name '.*' ! -name '.' ! -name '..' -exec rm -rf {} + 2>/dev/null || true
+            exit 0
+        """.trimIndent()
+        if (hasRoot) {
+            runCatching {
+                executeRootCommand(
+                    command = wipeScript,
+                    timeoutMinutes = 2,
+                    operation = "preBootWipeRoot"
+                )
+            }
+        } else {
+            runCatching {
+                executeDirectCommand(
+                    command = wipeScript,
+                    timeoutMinutes = 2,
+                    operation = "preBootWipeDirect"
+                )
+            }
         }
 
         val bootScript = if (ExecutionModeManager.isProot(context)) {

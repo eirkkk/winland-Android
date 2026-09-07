@@ -692,10 +692,18 @@ private fun SettingsPanel(
                 }
 
                 if (showRestartDialog && pendingMode != null) {
+                    val leavingRoot = currentMode == ExecutionMode.ROOT && pendingMode == ExecutionMode.PROOT
                     AlertDialog(
                         onDismissRequest = { showRestartDialog = false; pendingMode = null },
                         title = { Text("Restart required") },
-                        text = { Text("Switching execution mode requires restarting the app. The new mode will take effect on next launch.") },
+                        text = {
+                            Text(
+                                if (leavingRoot)
+                                    "Switching from Root (chroot) to Rootless (proot): do NOT disable root until the switch and the first proot boot complete. Root is needed to delete the previous session's files (hidden/logs); without it, root-owned leftovers cannot be removed and the next boot may fail. You may disable root afterwards. The app will restart now."
+                                else
+                                    "Switching execution mode requires restarting the app. Previous session logs/hidden files will be cleaned automatically on next boot (with root when available). The new mode will take effect on next launch."
+                            )
+                        },
                         confirmButton = {
                             Button(onClick = {
                                 val mode = pendingMode!!
