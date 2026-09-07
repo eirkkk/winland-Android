@@ -153,7 +153,9 @@ class TerminalActivity : ComponentActivity(), TerminalSessionClient, TerminalVie
             Log.i(TAG, "Using proot session: ${prootScriptFile.absolutePath}")
             shellBinary = findShBinary()
             cwd = "/"
-            args = arrayOf(prootScriptFile.absolutePath)
+            // argv must include the interpreter: sh <script>. Passing only
+            // the script path runs an interactive host shell instead.
+            args = arrayOf(shellBinary, prootScriptFile.absolutePath)
         } else {
             val suBinary = findShellBinary()
             val isSu = suBinary.endsWith("/su")
@@ -227,12 +229,14 @@ class TerminalActivity : ComponentActivity(), TerminalSessionClient, TerminalVie
             export PROOT_NO_SECCOMP=1
 
             if [ ! -d "${'$'}ROOTFS_DIR" ]; then
-                echo "ERROR: rootfs missing: ${'$'}ROOTFS_DIR"
-                exec /system/bin/sh
+                echo "ERROR: rootfs missing: ${'$'}ROOTFS_DIR" >&2
+                sleep 5
+                exit 1
             fi
             if [ ! -x "${'$'}PROOT_BIN" ]; then
-                echo "ERROR: proot binary missing: ${'$'}PROOT_BIN"
-                exec /system/bin/sh
+                echo "ERROR: proot binary missing or not executable: ${'$'}PROOT_BIN" >&2
+                sleep 5
+                exit 1
             fi
 
             mkdir -p "${'$'}ROOTFS_DIR/proc" "${'$'}ROOTFS_DIR/sys" "${'$'}ROOTFS_DIR/dev" "${'$'}ROOTFS_DIR/dev/pts" "${'$'}ROOTFS_DIR/tmp" "${'$'}ROOTFS_DIR/dev/shm" "${'$'}ROOTFS_DIR/external_storage" 2>/dev/null || true

@@ -140,7 +140,9 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
             prootScriptFile.writeText(buildProotCommand(rootfsDir, unifiedFilesDir, distroId, context.applicationInfo.nativeLibraryDir))
             prootScriptFile.setExecutable(true, false)
             cwd = "/"
-            args = arrayOf(prootScriptFile.absolutePath)
+            // argv must include the interpreter: sh <script>. Passing only
+            // the script path runs an interactive host shell instead.
+            args = arrayOf(shellBinary, prootScriptFile.absolutePath)
         } else if (status.ready && isSu) {
             val chrootScriptFile = java.io.File(physicalFilesDir, "chroot-dashboard_${distroId}_${sessionId}.sh")
             val chrootCommand = when (distroId) {
@@ -385,8 +387,8 @@ mkdir -p "${'$'}PROOT_TMP_DIR" 2>/dev/null || true
 [ -f "${'$'}FILES_DIR/bin/proot-loader32" ] && export PROOT_LOADER_32="${'$'}FILES_DIR/bin/proot-loader32"
 export PROOT_NO_SECCOMP=1
 
-[ ! -d "${'$'}ROOTFS_DIR" ] && exec /system/bin/sh
-[ ! -x "${'$'}PROOT_BIN" ] && exec /system/bin/sh
+[ ! -d "${'$'}ROOTFS_DIR" ] && { echo "ERROR: rootfs missing: ${'$'}ROOTFS_DIR" >&2; sleep 5; exit 1; }
+[ ! -x "${'$'}PROOT_BIN" ] && { echo "ERROR: proot binary missing or not executable: ${'$'}PROOT_BIN" >&2; sleep 5; exit 1; }
 
 mkdir -p "${'$'}ROOTFS_DIR/proc" "${'$'}ROOTFS_DIR/sys" "${'$'}ROOTFS_DIR/dev" "${'$'}ROOTFS_DIR/dev/pts" "${'$'}ROOTFS_DIR/tmp" "${'$'}ROOTFS_DIR/dev/shm" "${'$'}ROOTFS_DIR/external_storage" 2>/dev/null || true
 mkdir -p "${'$'}TMP_DIR" "${'$'}ROOTFS_DIR${'$'}FILES_DIR/tmp" 2>/dev/null || true
