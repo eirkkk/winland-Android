@@ -69,6 +69,35 @@ else
 fi
 # =====================================================================
 
+# =====================================================================
+# 🧠 Smart check and build for proot (rootless backend, Termux fork)
+# Sources live in $PROJECT_ROOT/proot (copied from the original
+# /tmp/proot-build). Uses /opt/android/ndk (API 26, static, aarch64).
+# =====================================================================
+PROOT_OUT_SO="$PROJECT_ROOT/app/src/main/jniLibs/arm64-v8a/libproot.so"
+PROOT_OUT_LOADER="$PROJECT_ROOT/app/src/main/jniLibs/arm64-v8a/libproot-loader.so"
+echo -e "${YELLOW}🔍 Checking proot binaries state...${NC}"
+if [ -f "$PROOT_OUT_SO" ] && [ -s "$PROOT_OUT_SO" ] && [ -f "$PROOT_OUT_LOADER" ] && [ -s "$PROOT_OUT_LOADER" ]; then
+    echo -e "${GREEN}⚡ Smart Skip: libproot.so + libproot-loader.so already present. Skipping proot build!${NC}"
+else
+    echo -e "${YELLOW}⚠️ proot binaries missing. Building proot from source...${NC}"
+
+    cd "$PROJECT_ROOT/proot"
+    ./build-proot-android.sh /opt/android/ndk
+
+    cp out/proot "$PROOT_OUT_SO"
+    cp out/proot-loader "$PROOT_OUT_LOADER"
+
+    # Legacy fallback copies for old devices (filesDir/bin, non-W^X only)
+    mkdir -p "$PROJECT_ROOT/app/src/main/assets/bin"
+    cp out/proot "$PROJECT_ROOT/app/src/main/assets/bin/proot"
+    cp out/proot-loader "$PROJECT_ROOT/app/src/main/assets/bin/proot-loader"
+
+    cd "$PROJECT_ROOT"
+    echo -e "${GREEN}✓ proot built and deployed successfully!${NC}"
+fi
+# =====================================================================
+
 # 📟 Build Terminal Emulator JNI library (libtermux.so) - fixed path
 # =====================================================================
 echo -e "${YELLOW}📟 Building Terminal Emulator JNI library (libtermux.so)...${NC}"
