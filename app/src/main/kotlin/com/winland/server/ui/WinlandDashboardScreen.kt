@@ -3,7 +3,6 @@ package com.winland.server.ui
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -903,12 +902,11 @@ private fun SettingsPanel(
                 )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
+                    Button(
                         onClick = { confirmAction = ConfirmAction.STOP },
                         enabled = buttonsEnabled,
                         modifier = Modifier.weight(1f).heightIn(min = 52.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = StopRed),
-                        border = BorderStroke(1.dp, StopRed)
+                        colors = ButtonDefaults.buttonColors(containerColor = StopRed, contentColor = Color.White)
                     ) {
                         Text("Stop")
                     }
@@ -1239,18 +1237,16 @@ private fun DistroCard(
                     }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
+                        Button(
                             onClick = actions.onDistroStop,
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = StopRed),
-                            border = BorderStroke(1.dp, StopRed)
+                            colors = ButtonDefaults.buttonColors(containerColor = StopRed, contentColor = Color.White)
                         ) {
                             Text("Stop")
                         }
 
-                        OutlinedButton(
+                        Button(
                             onClick = actions.onDistroRestart,
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = RestartBlue),
-                            border = BorderStroke(1.dp, RestartBlue)
+                            colors = ButtonDefaults.buttonColors(containerColor = RestartBlue, contentColor = Color.White)
                         ) {
                             Text("Restart")
                         }
