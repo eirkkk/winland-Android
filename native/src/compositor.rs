@@ -105,12 +105,26 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
 
         let mut backend_state = AndroidSmithayState::new();
         let mut input_router = InputRouter::default();
+        // One-shot touch-mapping trace after every surface change (rotation):
+        // logs raw/adjusted/surface/offsets/scale for the next tap so a
+        // systematic landscape offset can be diagnosed from logcat.
+        let mut trace_next_touch = true;
         log::info!("Compositor: runtime loop started");
 
         while thread_running.load(Ordering::Relaxed) {
             while let Ok(cmd) = cmd_rx.try_recv() {
                 match cmd {
                     JniCommand::TouchInput { action, id, x, y } => {
+                        if trace_next_touch && (action == 0 || action == 5) && id != -1 {
+                            trace_next_touch = false;
+                            log::info!(
+                                "TouchMap: raw=({:.0},{:.0}) off=({},{}) surf={}x{} scale={}",
+                                x, y,
+                                backend_state.x_offset, backend_state.y_offset,
+                                backend_state.surface_size.0, backend_state.surface_size.1,
+                                backend_state.current_scale,
+                            );
+                        }
                         // MOUSE_POINTER_ID (-1): BT mouse click, bypass route_touch in Mouse mode.
                         if id == -1 {
                             if let Some(server) = wayland_server.as_mut() {
@@ -278,6 +292,11 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
                             }
                             crate::android::command_channel::set_physical_size(backend_state.physical_size_mm.0, backend_state.physical_size_mm.1);
                         }
+                        // Rotation/resize invalidates in-flight touches: a finger
+                        // down in portrait must not produce a click at stale
+                        // coordinates (or ghost multi-touch) in landscape.
+                        input_router.clear();
+                        trace_next_touch = true;
                     }
                     JniCommand::BindNativeWindow { native_window, response } => {
                         let ptr = native_window.0 as *mut ndk_sys::ANativeWindow;
@@ -333,6 +352,8 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
                             let (actual_w, actual_h) = server.runtime.update_output_mode(width, height, None);
                             backend_state.surface_size = (actual_w, actual_h);
                         }
+                        input_router.clear();
+                        trace_next_touch = true;
                     }
                     JniCommand::SetScale { scale } => {
                         backend_state.requested_scale = Some(scale);
