@@ -35,6 +35,14 @@ Winland Server is a full-featured Wayland compositor that runs natively on Andro
 - Chroot-based isolation with bind-mount management
 - Clean unmount on shutdown/reboot
 
+### 🔓 Rootless Mode (No Root Required)
+- **Run Linux desktops without root** via bundled `proot` (user-space chroot over `ptrace`)
+- **Execution mode choice** at launch and in Settings: Root chroot or Rootless proot
+- proot shipped as a native library (`jniLibs`, exec-safe on Android 10+ W^X) with an assets fallback for older devices
+- Pure-Java rootfs extractor (gzip/xz) — no dependency on executable helpers in app-private storage
+- Same desktop experience: XFCE on LabWC, Wayland socket sharing, PulseAudio bridge, hardware-independent software rendering
+- proot sources vendored in `proot/` and built automatically by `build-arm64.sh` (see `docs/PROOT_MODE.md`)
+
 ### 🔊 Audio & Clipboard
 - **Native audio playback** — Zero-copy PCM audio routed via Oboe (AAudio) between chroot PulseAudio and Android audio hardware through a named FIFO pipe
 - **Native microphone input** — Android mic captured via Oboe (AAudio) at 44.1kHz mono 16-bit and streamed into chroot PulseAudio through a dedicated FIFO pipe
@@ -63,6 +71,7 @@ Winland Server is a full-featured Wayland compositor that runs natively on Andro
 | **RAM** | 3 GB | 6 GB+ |
 | **Storage** | 2 GB free | 8 GB+ |
 | **GPU** | Adreno 650+ (Vulkan 1.1+ for Turnip) | OpenGL ES 3.0+ |
+| **Root** | Not required (Rootless proot mode) | Rooted device (Root chroot mode, optional) |
 
 ---
 
@@ -72,8 +81,9 @@ Winland Server is a full-featured Wayland compositor that runs natively on Andro
 1. Download the latest APK from [Releases](https://github.com/anomalyco/winland-android/releases)
 2. Enable **Install from Unknown Sources** in Android Settings
 3. Install the APK and launch **Winland Server**
-4. Select a Linux distribution from the **Home** tab and tap **Install**
-5. Once installed, tap **Run** to start the compositor
+4. Choose the **execution mode** (Rootless proot for non-rooted devices, Root chroot for rooted ones) — changeable later in Settings
+5. Select a Linux distribution from the **Home** tab and tap **Install**
+6. Once installed, tap **Run** to start the compositor
 
 ### Build from Source
 
@@ -118,6 +128,12 @@ cp native/target/aarch64-linux-android/release/libuniffi_winland_core.so \
 ./gradlew clean assembleDebug
 ```
 
+**Full device build (recommended on ARM64):**
+```bash
+./build-arm64.sh   # libxkbcommon + proot (from proot/ sources) + Rust + APK
+```
+The script builds `proot`/`proot-loader` from the vendored sources in `proot/` (Termux fork + static talloc, NDK `/opt/android/ndk`) and deploys them to `jniLibs/` and `assets/bin/` automatically when missing.
+
 See [BUILD_ARM64.md](BUILD_ARM64.md) for detailed ARM64 build instructions.
 
 ---
@@ -126,7 +142,7 @@ See [BUILD_ARM64.md](BUILD_ARM64.md) for detailed ARM64 build instructions.
 
 1. **Bootstrapping**: The app downloads a compressed Linux rootfs (Ubuntu or Kali) and extracts it into the app's private data directory.
 
-2. **Chroot Setup**: With root privileges, the app mounts `/proc`, `/sys`, `/dev`, and bind-mounts the Wayland socket and audio FIFO into the chroot.
+2. **Chroot Setup**: With root privileges, the app mounts `/proc`, `/sys`, `/dev`, and bind-mounts the Wayland socket and audio FIFO into the chroot. In **Rootless (proot) mode** the same layout is achieved with user-space binds — no mounts, no privileges needed.
 
 3. **Compositor**: The Rust-based Smithay compositor creates a Wayland socket inside the app's data directory. This socket is bind-mounted into the chroot so Linux GUI apps can connect to it.
 
@@ -295,6 +311,7 @@ Copyright (c) 2024 Winland Server Contributors
 - [Wayland](https://wayland.freedesktop.org/) — Display server protocol
 - The [Turnip](https://gitlab.freedesktop.org/mesa/mesa/-/tree/master/src/gallium/drivers/zink) driver team for Vulkan-on-Adreno support
 - [Termux](https://termux.com/) — Android terminal emulator (terminal-view/terminal-emulator modules)
+- [proot (Termux fork)](https://github.com/termux/proot) — user-space chroot powering Rootless mode
 - [UniFFI](https://github.com/mozilla/uniffi-rs) — Rust-to-Kotlin bindings generator
 - [Android NDK](https://developer.android.com/ndk) — Native development kit
 
