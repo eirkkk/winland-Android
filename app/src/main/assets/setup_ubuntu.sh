@@ -311,6 +311,17 @@ EOF
 apt-get update
 apt-get -yq install firefox || true
 
+echo "INFO: Installing multimedia codecs for browser video (YouTube)..."
+echo "      Firefox plays VP9/AV1 natively, but H.264/AAC need system ffmpeg."
+apt-get -yq install ffmpeg || true
+extra_pkg=$(apt-cache search '^libavcodec-extra[0-9]+$' 2>/dev/null | awk '{print $1}' | sort -V | tail -1)
+if [ -n "$extra_pkg" ]; then
+    echo "INFO: Installing $extra_pkg ..."
+    apt-get -yq install "$extra_pkg" || true
+else
+    echo "INFO: no libavcodec-extra package found, ffmpeg codecs suffice"
+fi
+
 echo "INFO: Installing LabWC/wlroots binaries..."
 LABWC_DEB_URL="https://github.com/eirkkk/winland-Android/releases/download/main/labwc_0.7.1-1build1_arm64.deb"
 WLPROOTS_DEV_URL="https://github.com/eirkkk/winland-Android/releases/download/main/libwlroots-dev_0.17.1-2.1build1_arm64.deb"

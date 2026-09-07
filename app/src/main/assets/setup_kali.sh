@@ -284,4 +284,12 @@ EOF
 apt-get -yq update || true
 install_with_retry firefox || true
 
+echo "INFO: Installing multimedia codecs for browser video (YouTube)..."
+install_with_retry ffmpeg || true
+extra_pkg=$(apt-cache search '^libavcodec-extra[0-9]+$' 2>/dev/null | awk '{print $1}' | sort -V | tail -1)
+if [ -n "$extra_pkg" ]; then
+    echo "INFO: Installing $extra_pkg ..."
+    install_with_retry "$extra_pkg" || true
+fi
+
 echo "Kali setup finished."
