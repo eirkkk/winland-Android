@@ -226,6 +226,15 @@ class DisplayActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Deterministic safe area in every orientation: never extend into
+        // the display cutout (the implicit DEFAULT mode letterboxes only in
+        // landscape, making window dimensions asymmetric across rotations).
+        // With NEVER, surface == safe window bounds in both orientations,
+        // so touch mapping stays 1:1 with the compositor output.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
+        }
         markAsCurrentActivity()
 
         clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -567,6 +576,23 @@ class DisplayActivity : ComponentActivity() {
                         },
                         onSurfaceChanged = { _, format, width, height ->
                             android.util.Log.i("DisplayActivity", "com.winland.server: surfaceChanged format=$format width=$width height=$height")
+                            // Geometry check: surface must equal the safe window
+                            // bounds in every orientation (cutout mode NEVER).
+                            // A mismatch here means touch mapping cannot be 1:1.
+                            runCatching {
+                                val bounds = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                    windowManager.currentWindowMetrics.bounds
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    val dm = DisplayMetrics()
+                                    @Suppress("DEPRECATION")
+                                    windowManager.defaultDisplay.getMetrics(dm)
+                                    android.graphics.Rect(0, 0, dm.widthPixels, dm.heightPixels)
+                                }
+                                android.util.Log.i("DisplayActivity",
+                                    "Geometry: window=${bounds.width()}x${bounds.height()} surface=${width}x${height}" +
+                                    " match=${bounds.width() == width && bounds.height() == height}")
+                            }
                             var leftInset = 0; var topInset = 0; var rightInset = 0; var bottomInset = 0
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                                 val insets = window.decorView.rootWindowInsets
@@ -840,6 +866,11 @@ class DisplayActivity : ComponentActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         android.util.Log.i("DisplayActivity", "onConfigurationChanged: ${newConfig.orientation}")
+        // Re-apply: some OEMs reset window attributes on rotation.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
+        }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             window.insetsController?.let {
                 it.hide(android.view.WindowInsets.Type.statusBars() or android.view.WindowInsets.Type.navigationBars())
