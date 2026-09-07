@@ -55,10 +55,15 @@
 ## البناء والنشر
 
 ```sh
-./build-arm64.sh            # بناء كامل (Rust + native + APK)
+./build-arm64.sh            # بناء كامل (proot من المصدر عند غيابه + Rust + native + APK)
+./proot/build-proot-android.sh /opt/android/ndk   # بناء proot فقط → proot/out/
 ./gradlew assembleDebug     # APK فقط بعد تعديل Kotlin
 # app/build/outputs/apk/debug/app-debug.apk
 ```
+
+مصادر proot مُضمّنة في `proot/` (‏`proot-termux` fork + ‏`talloc-2.4.2`
+مع `config.h` المكتوب يدوياً) — قسم Smart Skip في `build-arm64.sh`
+يبنيها فقط عند غياب `jniLibs/.../libproot.so`.
 
 > ملاحظة بيئة البناء: NDK r29 ثنائياته aarch64 داخل مجلد `linux-x86_64`
 > (رابط رمزي `linux-aarch64` موجود)، و `libxml2.so.16` مثبّت على النظام
