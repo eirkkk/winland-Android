@@ -504,6 +504,17 @@ object ChrootInstaller {
             }
         }
 
+        // Stale X11 sockets (.X11-unix/X0) from the previous session's
+        // Xwayland block the new boot in BOTH directions (proot<->chroot):
+        // the new Xwayland cannot bind an occupied socket path and the
+        // desktop dies. Safe to wipe: Xwayland recreates them every boot.
+        // NOTE: never touch $tmpDir/wayland-0 itself (host compositor).
+        runCatching {
+            val x11Dir = File("$tmpDir/.X11-unix")
+            val removed = x11Dir.listFiles()?.onEach { it.deleteRecursively() }?.size ?: 0
+            _logFlow.tryEmit("INFO: cleaned $removed stale .X11-unix entries")
+        }
+
         val bootScript = if (ExecutionModeManager.isProot(context)) {
             _logFlow.tryEmit("INFO: booting desktop via proot (rootless mode)")
             try {
