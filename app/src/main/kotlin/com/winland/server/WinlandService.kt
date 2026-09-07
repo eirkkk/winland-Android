@@ -167,7 +167,13 @@ class WinlandService : LifecycleService() {
             // Safe unmount of all chroot bind-mounts (proc/sys/dev/sdcard/dev-shm)
             // This protects /sdcard data if the app is force-stopped or uninstalled,
             // without blocking service teardown on the main thread.
-            CleanupReceiver.safeUnmountAsync(this)
+            // Skipped in PROOT mode: proot creates no real mounts, so there is
+            // nothing to unmount.
+            if (!ExecutionModeManager.isProot(this)) {
+                CleanupReceiver.safeUnmountAsync(this)
+            } else {
+                Log.i(TAG, "PROOT mode: skipping safe unmount (no real mounts)")
+            }
             Log.i(TAG, "WinlandService Destroyed - rendering suspended, audio/camera stopped, mounts cleanup scheduled")
             super.onDestroy()
         }

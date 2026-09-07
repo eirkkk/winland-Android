@@ -29,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
+import com.winland.server.ui.ExecutionModeDialog
 import com.winland.server.ui.RootAccessRequiredDialog
 import com.winland.server.ui.WinlandDashboardActions
 import com.winland.server.ui.WinlandDashboardScreen
@@ -134,13 +135,35 @@ class MainActivity : ComponentActivity() {
 
                 WinlandServerTheme(darkTheme = if (themeSettings.followSystemTheme) isSystemInDarkTheme() else themeSettings.darkModeEnabled) {
                     val scope = rememberCoroutineScope()
-                    var isRootAvailable by remember { mutableStateOf(true) }
+                    var rootAvailableState by remember { mutableStateOf(false) }
+                    var showModeDialog by remember { mutableStateOf(false) }
                     var showRootDialog by remember { mutableStateOf(false) }
+                    val executionMode by uiViewModel.executionMode.collectAsState()
 
                     LaunchedEffect(Unit) {
                         val root = withContext(Dispatchers.IO) { RootUtils.isRootAvailable() }
-                        isRootAvailable = root
-                        showRootDialog = !root
+                        val proot = withContext(Dispatchers.IO) { RootUtils.isProotAvailable(this@MainActivity) }
+                        rootAvailableState = root
+                        when {
+                            root && proot -> {
+                                uiViewModel.refreshExecutionMode()
+                                showModeDialog = true
+                            }
+                            root -> uiViewModel.setExecutionMode(ExecutionMode.ROOT)
+                            proot -> uiViewModel.setExecutionMode(ExecutionMode.PROOT)
+                            else -> showRootDialog = true
+                        }
+                    }
+
+                    if (showModeDialog) {
+                        ExecutionModeDialog(
+                            initial = executionMode,
+                            rootAvailable = rootAvailableState,
+                            onConfirm = { mode ->
+                                uiViewModel.setExecutionMode(mode)
+                                showModeDialog = false
+                            }
+                        )
                     }
 
                     if (showRootDialog) {
@@ -148,7 +171,16 @@ class MainActivity : ComponentActivity() {
                             onRetry = {
                                 scope.launch {
                                     val root = withContext(Dispatchers.IO) { RootUtils.isRootAvailable() }
-                                    if (root) showRootDialog = false
+                                    val proot = withContext(Dispatchers.IO) { RootUtils.isProotAvailable(this@MainActivity) }
+                                    rootAvailableState = root
+                                    if (root || proot) {
+                                        showRootDialog = false
+                                        when {
+                                            root && proot -> showModeDialog = true
+                                            root -> uiViewModel.setExecutionMode(ExecutionMode.ROOT)
+                                            else -> uiViewModel.setExecutionMode(ExecutionMode.PROOT)
+                                        }
+                                    }
                                 }
                             },
                             onExit = { finish() }

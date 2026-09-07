@@ -16,7 +16,9 @@ import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
+import com.winland.server.ExecutionModeManager
 import com.winland.server.engine.ChrootInstaller
+import com.winland.server.engine.ProotManager
 import com.winland.server.utils.getUnifiedFilesDir
 import com.winland.server.utils.getUnifiedRootfsDir
 
@@ -121,14 +123,25 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
         val unifiedFilesDir = context.getUnifiedFilesDir()
         val rootfsDir = context.getUnifiedRootfsDir(distroId)
         val status = ChrootInstaller.getChrootStatus(context, distroId)
+        val prootMode = ExecutionModeManager.isProot(context)
+        val prootReady = prootMode && status.ready && ProotManager.isAvailable(context)
 
-        val shellBinary = findShellBinary()
+        val shellBinary = if (prootMode) findShBinary() else findShellBinary()
         val isSu = shellBinary.endsWith("/su")
 
         val args: Array<String>
         val cwd: String
 
-        if (status.ready && isSu) {
+        if (prootReady) {
+            runCatching {
+                ProotManager.prepareGuestDirs(rootfsDir, unifiedFilesDir, "$unifiedFilesDir/tmp")
+            }
+            val prootScriptFile = java.io.File(physicalFilesDir, "proot-dashboard_${distroId}_${sessionId}.sh")
+            prootScriptFile.writeText(buildProotCommand(rootfsDir, unifiedFilesDir, distroId, context.applicationInfo.nativeLibraryDir))
+            prootScriptFile.setExecutable(true, false)
+            cwd = "/"
+            args = arrayOf(prootScriptFile.absolutePath)
+        } else if (status.ready && isSu) {
             val chrootScriptFile = java.io.File(physicalFilesDir, "chroot-dashboard_${distroId}_${sessionId}.sh")
             val chrootCommand = when (distroId) {
                 "kali" -> buildChrootCommandKali(rootfsDir, unifiedFilesDir)
@@ -206,6 +219,8 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
     private fun ensurePtmxAccess() {
         if (ptmxFixAttempted) return
         ptmxFixAttempted = true
+        // Rootless mode cannot chmod /dev/ptmx; the app pty works without it.
+        if (ExecutionModeManager.isProot(context)) return
         try {
             val proc = Runtime.getRuntime().exec(arrayOf("su", "-c", "chmod 666 /dev/ptmx && chmod 666 /dev/pts/ptmx 2>/dev/null; ls -laZ /dev/ptmx"))
             val code = proc.waitFor()
@@ -336,6 +351,67 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
             if (java.io.File(path).exists()) return path
         }
         return "/system/bin/sh"
+    }
+
+    private fun findShBinary(): String {
+        val shCandidates = listOf("/system/bin/sh", "/bin/sh")
+        for (path in shCandidates) {
+            if (java.io.File(path).exists()) return path
+        }
+        return "/system/bin/sh"
+    }
+
+    private fun buildProotCommand(rootfsDir: String, filesDir: String, distroId: String, nativeLibDir: String): String {
+        val tmpDir = "$filesDir/tmp"
+        val ps1 = if (distroId == "kali") {
+            "'\\[\\e[31m\\]root@winland_kali:\\w# \\[\\e[0m\\]'"
+        } else {
+            "'\\[\\e[32m\\]root@winland_ubuntu:\\w# \\[\\e[0m\\]'"
+        }
+        return """#!/system/bin/sh
+ROOTFS_DIR="$rootfsDir"
+TMP_DIR="$tmpDir"
+FILES_DIR="$filesDir"
+EXT_STORAGE=/storage/emulated/0
+NATIVE_LIB_DIR="$nativeLibDir"
+PROOT_BIN="${'$'}NATIVE_LIB_DIR/libproot.so"
+[ ! -x "${'$'}PROOT_BIN" ] && PROOT_BIN="${'$'}FILES_DIR/bin/proot"
+PROOT_LOADER_CANDIDATE="${'$'}NATIVE_LIB_DIR/libproot-loader.so"
+[ ! -f "${'$'}PROOT_LOADER_CANDIDATE" ] && PROOT_LOADER_CANDIDATE="${'$'}FILES_DIR/bin/proot-loader"
+
+export PROOT_TMP_DIR="${'$'}TMP_DIR/proot-tmp"
+mkdir -p "${'$'}PROOT_TMP_DIR" 2>/dev/null || true
+[ -f "${'$'}PROOT_LOADER_CANDIDATE" ] && export PROOT_LOADER="${'$'}PROOT_LOADER_CANDIDATE"
+[ -f "${'$'}FILES_DIR/bin/proot-loader32" ] && export PROOT_LOADER_32="${'$'}FILES_DIR/bin/proot-loader32"
+export PROOT_NO_SECCOMP=1
+
+[ ! -d "${'$'}ROOTFS_DIR" ] && exec /system/bin/sh
+[ ! -x "${'$'}PROOT_BIN" ] && exec /system/bin/sh
+
+mkdir -p "${'$'}ROOTFS_DIR/proc" "${'$'}ROOTFS_DIR/sys" "${'$'}ROOTFS_DIR/dev" "${'$'}ROOTFS_DIR/dev/pts" "${'$'}ROOTFS_DIR/tmp" "${'$'}ROOTFS_DIR/dev/shm" "${'$'}ROOTFS_DIR/external_storage" 2>/dev/null || true
+mkdir -p "${'$'}TMP_DIR" "${'$'}ROOTFS_DIR${'$'}FILES_DIR/tmp" 2>/dev/null || true
+mkdir -p "${'$'}TMP_DIR/dev/shm" 2>/dev/null || true
+chmod 1777 "${'$'}TMP_DIR/dev/shm" 2>/dev/null || true
+
+export HOME=/root
+export USER=root
+export LOGNAME=root
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export TERM=xterm-256color
+export COLORTERM=truecolor
+export LANG=$currentLang
+export PS1=$ps1
+export XDG_RUNTIME_DIR=${'$'}FILES_DIR/tmp
+export WAYLAND_DISPLAY=wayland-0
+export PULSE_SERVER=unix:/tmp/pulse-runtime/native
+exec "${'$'}PROOT_BIN" -0 -r "${'$'}ROOTFS_DIR" -w /root --link2symlink \
+    -b /proc -b /sys -b /dev -b /dev/pts \
+    -b "${'$'}TMP_DIR/dev/shm:/dev/shm" \
+    -b /dev/null:/dev/null -b /dev/zero:/dev/zero -b /dev/random:/dev/random -b /dev/urandom:/dev/urandom \
+    -b "${'$'}TMP_DIR:/tmp" \
+    -b "${'$'}EXT_STORAGE:/external_storage" \
+    /bin/bash --login
+"""
     }
 
     private fun buildChrootCommandGeneric(rootfsDir: String, filesDir: String): String {

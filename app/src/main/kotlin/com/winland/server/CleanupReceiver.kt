@@ -67,6 +67,11 @@ class CleanupReceiver : BroadcastReceiver() {
          * Suspend variant for structured callers that need to await completion.
          */
         suspend fun safeUnmountSuspend(context: Context): Result<Unit> {
+            // PROOT mode creates no kernel mounts, so there is nothing to clean up.
+            if (ExecutionModeManager.isProot(context)) {
+                Log.i(TAG, "PROOT mode: safe unmount not required")
+                return Result.success(Unit)
+            }
             try {
                 val result = ChrootInstaller.stopChroot(context)
                 if (result.isSuccess) {

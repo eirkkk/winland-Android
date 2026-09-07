@@ -1,5 +1,6 @@
 package com.winland.server.ui
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -40,6 +41,8 @@ import androidx.compose.material.icons.filled.Mouse
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -90,6 +93,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.winland.server.DashboardTab
+import com.winland.server.ExecutionMode
+import com.winland.server.ExecutionModeManager
 import com.winland.server.LinuxDistro
 import com.winland.server.MainViewModel
 import java.util.UUID
@@ -632,6 +637,88 @@ private fun SettingsPanel(
         }
 
         GlassCard {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Security, contentDescription = "Execution Mode", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Execution Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                val currentMode by viewModel.executionMode.collectAsState()
+                var showRestartDialog by remember { mutableStateOf(false) }
+                var pendingMode by remember { mutableStateOf<ExecutionMode?>(null) }
+
+                ExecutionMode.entries.forEach { mode ->
+                    val isSelected = currentMode == mode
+                    GlassSurface(
+                        onClick = {
+                            if (!isSelected) {
+                                pendingMode = mode
+                                showRestartDialog = true
+                            }
+                        },
+                        selected = isSelected,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = isSelected, onClick = {})
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = when (mode) {
+                                        ExecutionMode.ROOT -> "Root (chroot)"
+                                        ExecutionMode.PROOT -> "Rootless (proot)"
+                                    },
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                                Text(
+                                    text = when (mode) {
+                                        ExecutionMode.ROOT -> "Requires root access. Full system capabilities."
+                                        ExecutionMode.PROOT -> "No root required. Uses bundled proot binary."
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (showRestartDialog && pendingMode != null) {
+                    AlertDialog(
+                        onDismissRequest = { showRestartDialog = false; pendingMode = null },
+                        title = { Text("Restart required") },
+                        text = { Text("Switching execution mode requires restarting the app. The new mode will take effect on next launch.") },
+                        confirmButton = {
+                            Button(onClick = {
+                                val mode = pendingMode!!
+                                viewModel.setExecutionMode(mode)
+                                pendingMode = null
+                                showRestartDialog = false
+                                val ctx = appContext
+                                val intent = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
+                                if (intent != null) {
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                                    ctx.startActivity(intent)
+                                }
+                            }) { Text("Restart now") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showRestartDialog = false; pendingMode = null }) { Text("Cancel") }
+                        }
+                    )
+                }
+            }
+        }
+
+        GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.DisplaySettings, contentDescription = "Display resolution", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
@@ -876,6 +963,56 @@ private fun SettingsPanel(
             }
         }
 
+        GlassCard {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Info, contentDescription = "Help", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Help", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                val features = listOf(
+                    "Linux Desktop" to "Run full XFCE desktop environment with Wayland compositor on your Android device.",
+                    "Multiple Distros" to "Support for Ubuntu, Debian, and other Linux distributions with easy install and setup.",
+                    "Terminal Emulator" to "Built-in terminal with proot/chroot sessions, extra keys, and session management.",
+                    "Root & Rootless" to "Choose between root mode (chroot) for full capabilities or rootless mode (proot) without root access.",
+                    "GPU Support" to "Hardware-accelerated rendering via Vulkan/OpenGL ES when running in root mode.",
+                    "Display Scaling" to "Adjust display resolution and scale factor for optimal viewing on any screen size.",
+                    "USB Devices" to "Pass-through USB devices like keyboard and mouse to the Linux environment.",
+                    "Clipboard Sync" to "Seamless clipboard sharing between Android and the Linux desktop.",
+                    "Wayland Compositor" to "Native Wayland display server using Smithay for high-performance window management.",
+                    "Proot Bundled" to "Built-in proot binary compiled for aarch64. No external downloads needed for rootless mode."
+                )
+
+                features.forEach { (title, description) ->
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                Text(
+                    text = "Winland Server v1.0",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        }
+
         when (confirmAction) {
             ConfirmAction.STOP -> AlertDialog(
                 onDismissRequest = { confirmAction = null },
@@ -938,6 +1075,7 @@ private fun DistroCard(
     }
     val statusReady = distroChrootState?.ready == true
     val statusText = distroChrootState?.reason ?: "Checking status..."
+    val executionMode by viewModel.executionMode.collectAsState()
 
     val operationLocked = activeUiOperation != null
     val lockReason = when {
@@ -982,7 +1120,11 @@ private fun DistroCard(
                     Text(distro.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(distro.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                StatusBadge(statusReady)
+                Column(horizontalAlignment = Alignment.End) {
+                    StatusBadge(statusReady)
+                    Spacer(Modifier.height(4.dp))
+                    ExecutionModeBadge(mode = executionMode)
+                }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -1101,6 +1243,23 @@ private fun DistroCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ExecutionModeBadge(mode: ExecutionMode) {
+    val isProot = mode == ExecutionMode.PROOT
+    Surface(
+        color = if (isProot) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+        shape = RoundedCornerShape(50)
+    ) {
+        Text(
+            text = if (isProot) "ROOTLESS" else "ROOT",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isProot) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+        )
     }
 }
 

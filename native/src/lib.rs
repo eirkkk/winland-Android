@@ -113,6 +113,11 @@ pub fn get_root_mode() -> bool {
     root::is_root()
 }
 
+#[uniffi::export]
+pub fn is_proot_available(files_dir: String) -> bool {
+    root::is_proot_available(&files_dir)
+}
+
 #[no_mangle]
 pub extern "system" fn Java_com_winland_server_NativeBridge_initAudioBridge(
     _env: JNIEnv,

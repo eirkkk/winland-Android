@@ -25,6 +25,7 @@ import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import com.winland.server.engine.ChrootInstaller
+import com.winland.server.engine.ProotManager
 import com.winland.server.utils.*
 
 class TerminalActivity : ComponentActivity(), TerminalSessionClient, TerminalViewClient {
@@ -134,26 +135,44 @@ class TerminalActivity : ComponentActivity(), TerminalSessionClient, TerminalVie
         val prefs = getSharedPreferences("winland_prefs", MODE_PRIVATE)
         val terminalLang = prefs.getString("terminal_lang", "en_US.UTF-8") ?: "en_US.UTF-8"
 
-        val shellBinary = findShellBinary()
-        val isSu = shellBinary.endsWith("/su")
-        Log.i(TAG, "Using shell: $shellBinary (su=$isSu, chrootReady=${status.ready})")
-
+        val shellBinary: String
         val args: Array<String>
         val cwd: String
 
-        if (status.ready && isSu) {
-            // Write chroot script to a file and execute it via su
-            val chrootScriptFile = java.io.File(filesDir, "chroot-terminal_$distroId.sh")
-            chrootScriptFile.writeText(buildChrootCommand(rootfsDir, filesDir, distroId, terminalLang))
-            chrootScriptFile.setExecutable(true, false)
+        val prootMode = ExecutionModeManager.isProot(this)
+        val prootReady = prootMode && status.ready && ProotManager.isAvailable(this)
+
+        if (prootReady) {
+            // Rootless session: enter the rootfs via bundled proot (no su/mount).
+            runCatching {
+                ProotManager.prepareGuestDirs(rootfsDir, filesDir, "$filesDir/tmp")
+            }
+            val prootScriptFile = java.io.File(filesDir, "proot-terminal_$distroId.sh")
+            prootScriptFile.writeText(buildProotCommand(rootfsDir, filesDir, distroId, terminalLang, applicationInfo.nativeLibraryDir))
+            prootScriptFile.setExecutable(true, false)
+            Log.i(TAG, "Using proot session: ${prootScriptFile.absolutePath}")
+            shellBinary = findShBinary()
             cwd = "/"
-            args = arrayOf("-c", "sh ${chrootScriptFile.absolutePath}")
-        } else if (isSu) {
-            cwd = "/"
-            args = arrayOf()
+            args = arrayOf(prootScriptFile.absolutePath)
         } else {
-            cwd = filesDir
-            args = arrayOf()
+            val suBinary = findShellBinary()
+            val isSu = suBinary.endsWith("/su")
+            Log.i(TAG, "Using shell: $suBinary (su=$isSu, chrootReady=${status.ready})")
+            shellBinary = suBinary
+            if (status.ready && isSu) {
+                // Write chroot script to a file and execute it via su
+                val chrootScriptFile = java.io.File(filesDir, "chroot-terminal_$distroId.sh")
+                chrootScriptFile.writeText(buildChrootCommand(rootfsDir, filesDir, distroId, terminalLang))
+                chrootScriptFile.setExecutable(true, false)
+                cwd = "/"
+                args = arrayOf("-c", "sh ${chrootScriptFile.absolutePath}")
+            } else if (isSu) {
+                cwd = "/"
+                args = arrayOf()
+            } else {
+                cwd = filesDir
+                args = arrayOf()
+            }
         }
         val env = arrayOf(
             "TERM=xterm-256color",
@@ -178,6 +197,66 @@ class TerminalActivity : ComponentActivity(), TerminalSessionClient, TerminalVie
             Log.e(TAG, "Failed to create terminal session", e)
             Toast.makeText(this, "Failed to start terminal: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun findShBinary(): String {
+        val shCandidates = listOf("/system/bin/sh", "/bin/sh")
+        for (path in shCandidates) {
+            if (java.io.File(path).exists()) return path
+        }
+        return "/system/bin/sh"
+    }
+
+    private fun buildProotCommand(rootfsDir: String, filesDir: String, distroId: String, lang: String = "en_US.UTF-8", nativeLibDir: String): String {
+        val tmpDir = "$filesDir/tmp"
+        return """
+            NATIVE_LIB_DIR="$nativeLibDir"
+            PROOT_BIN="${'$'}NATIVE_LIB_DIR/libproot.so"
+            [ ! -x "${'$'}PROOT_BIN" ] && PROOT_BIN="$filesDir/bin/proot"
+            ROOTFS_DIR="$rootfsDir"
+            TMP_DIR="$tmpDir"
+            FILES_DIR="$filesDir"
+            EXT_STORAGE=/storage/emulated/0
+
+            export PROOT_TMP_DIR="${'$'}TMP_DIR/proot-tmp"
+            mkdir -p "${'$'}PROOT_TMP_DIR" 2>/dev/null || true
+            PROOT_LOADER_CANDIDATE="${'$'}NATIVE_LIB_DIR/libproot-loader.so"
+            [ ! -f "${'$'}PROOT_LOADER_CANDIDATE" ] && PROOT_LOADER_CANDIDATE="${'$'}FILES_DIR/bin/proot-loader"
+            [ -f "${'$'}PROOT_LOADER_CANDIDATE" ] && export PROOT_LOADER="${'$'}PROOT_LOADER_CANDIDATE"
+            [ -f "${'$'}FILES_DIR/bin/proot-loader32" ] && export PROOT_LOADER_32="${'$'}FILES_DIR/bin/proot-loader32"
+            export PROOT_NO_SECCOMP=1
+
+            if [ ! -d "${'$'}ROOTFS_DIR" ]; then
+                echo "ERROR: rootfs missing: ${'$'}ROOTFS_DIR"
+                exec /system/bin/sh
+            fi
+            if [ ! -x "${'$'}PROOT_BIN" ]; then
+                echo "ERROR: proot binary missing: ${'$'}PROOT_BIN"
+                exec /system/bin/sh
+            fi
+
+            mkdir -p "${'$'}ROOTFS_DIR/proc" "${'$'}ROOTFS_DIR/sys" "${'$'}ROOTFS_DIR/dev" "${'$'}ROOTFS_DIR/dev/pts" "${'$'}ROOTFS_DIR/tmp" "${'$'}ROOTFS_DIR/dev/shm" "${'$'}ROOTFS_DIR/external_storage" 2>/dev/null || true
+            mkdir -p "${'$'}TMP_DIR" "${'$'}ROOTFS_DIR${'$'}FILES_DIR/tmp" 2>/dev/null || true
+            mkdir -p "${'$'}TMP_DIR/dev/shm" 2>/dev/null || true
+            chmod 1777 "${'$'}TMP_DIR/dev/shm" 2>/dev/null || true
+
+            export HOME=/root
+            export USER=root
+            export TERM=xterm-256color
+            export COLORTERM=truecolor
+            export LANG=$lang
+            export PS1='root@winland_$distroId:\w# '
+            export XDG_RUNTIME_DIR=${'$'}FILES_DIR/tmp
+            export WAYLAND_DISPLAY=wayland-0
+            export PULSE_SERVER=unix:/tmp/pulse-runtime/native
+            exec "${'$'}PROOT_BIN" -0 -r "${'$'}ROOTFS_DIR" -w /root --link2symlink \
+                -b /proc -b /sys -b /dev -b /dev/pts \
+                -b "${'$'}TMP_DIR/dev/shm:/dev/shm" \
+                -b /dev/null:/dev/null -b /dev/zero:/dev/zero -b /dev/random:/dev/random -b /dev/urandom:/dev/urandom \
+                -b "${'$'}TMP_DIR:/tmp" \
+                -b "${'$'}EXT_STORAGE:/external_storage" \
+                /bin/bash --login
+        """.trimIndent()
     }
 
     private fun buildChrootCommand(rootfsDir: String, filesDir: String, distroId: String, lang: String = "en_US.UTF-8"): String {

@@ -137,6 +137,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _activeDistroId = MutableStateFlow(prefs.getString("active_distro_id", null))
     val activeDistroId: StateFlow<String?> = _activeDistroId.asStateFlow()
 
+    private val _executionMode = MutableStateFlow(ExecutionMode.fromName(prefs.getString("execution_mode", null)))
+    val executionMode: StateFlow<ExecutionMode> = _executionMode.asStateFlow()
+
+    fun setExecutionMode(mode: ExecutionMode) {
+        prefs.edit().putString("execution_mode", mode.name).apply()
+        ExecutionModeManager.set(getApplication(), mode)
+        _executionMode.value = mode
+    }
+
+    fun refreshExecutionMode() {
+        ExecutionModeManager.invalidate()
+        _executionMode.value = ExecutionModeManager.get(getApplication())
+    }
+
     private val _chrootRuntimeState = MutableStateFlow(ChrootRuntimeState())
     val chrootRuntimeState: StateFlow<ChrootRuntimeState> = _chrootRuntimeState.asStateFlow()
 

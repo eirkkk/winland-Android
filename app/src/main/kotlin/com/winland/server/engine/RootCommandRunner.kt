@@ -306,6 +306,117 @@ object RootCommandRunner {
         }
     }
 
+    /**
+     * Rootless execution path used by PROOT mode. Runs [command] via the
+     * system shell directly (`sh -c ...`) without any `su` escalation.
+     * Same streaming/timeout semantics as [execute].
+     */
+    suspend fun executeDirect(
+        command: String,
+        timeout: Long,
+        timeUnit: TimeUnit,
+        onStdout: (String) -> Unit = {},
+        onStderr: (String) -> Unit = {}
+    ): Result<Unit> {
+        return suspendCancellableCoroutine { cont ->
+            val processRef = AtomicReference<Process?>(null)
+
+            val worker = Thread {
+                try {
+                    val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+                    processRef.set(process)
+
+                    val reader = process.inputStream.bufferedReader()
+                    val errorReader = process.errorStream.bufferedReader()
+                    val readersDone = CountDownLatch(2)
+
+                    val stdoutThread = Thread {
+                        try {
+                            var line: String?
+                            while (reader.readLine().also { line = it } != null) {
+                                safeEmit(onStdout, line ?: "")
+                            }
+                        } catch (_: InterruptedIOException) {
+                        } catch (_: Exception) {
+                        } finally {
+                            try {
+                                reader.close()
+                            } catch (_: Exception) {
+                            }
+                            readersDone.countDown()
+                        }
+                    }
+
+                    val stderrThread = Thread {
+                        try {
+                            var line: String?
+                            while (errorReader.readLine().also { line = it } != null) {
+                                safeEmit(onStderr, line ?: "")
+                            }
+                        } catch (_: InterruptedIOException) {
+                        } catch (_: Exception) {
+                        } finally {
+                            try {
+                                errorReader.close()
+                            } catch (_: Exception) {
+                            }
+                            readersDone.countDown()
+                        }
+                    }
+
+                    stdoutThread.start()
+                    stderrThread.start()
+
+                    val finished = process.waitFor(timeout, timeUnit)
+                    if (!finished) {
+                        process.destroyForcibly()
+                    }
+
+                    readersDone.await(2, TimeUnit.SECONDS)
+                    val exitCode = if (finished) process.exitValue() else -1
+                    val result = if (finished && exitCode == 0) {
+                        Result.success(Unit)
+                    } else {
+                        Result.failure(IllegalStateException("command failed with exit code $exitCode"))
+                    }
+
+                    if (cont.isActive) {
+                        cont.resume(result)
+                    }
+                } catch (e: Exception) {
+                    if (cont.isActive) {
+                        cont.resume(Result.failure(e))
+                    }
+                }
+            }
+
+            cont.invokeOnCancellation {
+                processRef.get()?.destroyForcibly()
+                worker.interrupt()
+            }
+
+            worker.start()
+        }
+    }
+
+    fun executeDirectBlocking(
+        command: String,
+        timeout: Long,
+        timeUnit: TimeUnit
+    ): Boolean {
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+            val finished = process.waitFor(timeout, timeUnit)
+            if (!finished) {
+                process.destroyForcibly()
+                return false
+            }
+            process.exitValue() == 0
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private suspend fun executeWithLibSu(
         command: String,
         timeout: Long,

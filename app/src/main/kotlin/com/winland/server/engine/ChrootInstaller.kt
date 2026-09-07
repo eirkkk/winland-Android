@@ -10,6 +10,7 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
+import com.winland.server.ExecutionModeManager
 import com.winland.server.NativeBridge
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -178,6 +179,23 @@ object ChrootInstaller {
             return Result.failure(IllegalStateException("rootfs archive is invalid or incomplete; please re-download"))
         }
         
+        // --- [Winland OS: Proot (rootless) extraction path] ---
+        // Pure-Java extraction: the shell script depends on
+        // $filesDir/bin/busybox, which is not executable on targetSdk 29+
+        // devices (W^X). Everything here is app-private storage owned by the
+        // app UID, so no privilege — and no busybox — is needed.
+        if (ExecutionModeManager.isProot(context)) {
+            return extractRootfsProot(
+                context = context,
+                rootfsArchive = rootfsArchive,
+                stagedRootfsDir = stagedRootfsDir,
+                rootfsDir = rootfsDir,
+                backupRootfsDir = backupRootfsDir,
+                profileInstalledDir = profileInstalledDir,
+                distroId = distroId
+            )
+        }
+
         // --- [Winland OS: Deploy Internal Busybox BEFORE extraction] ---
         deployInternalBusybox(context, filesDir)
 
@@ -196,11 +214,66 @@ object ChrootInstaller {
         )
 
         scriptFile.writeText(script)
-        return executeRootCommand(
+        return dispatchCommand(
+            context = context,
             command = "sh ${scriptFile.absolutePath}",
             timeoutMinutes = 120,
             operation = "extractRootfs"
         )
+    }
+
+    /**
+     * Rootless extraction: decode the archive with the built-in Java
+     * decoder, then unwrap/validate/swap exactly like the shell script.
+     * No busybox, no mounts, no privileges required.
+     */
+    private suspend fun extractRootfsProot(
+        context: Context,
+        rootfsArchive: File,
+        stagedRootfsDir: String,
+        rootfsDir: String,
+        backupRootfsDir: String,
+        profileInstalledDir: String,
+        distroId: String
+    ): Result<Unit> {
+        val log: (String) -> Unit = { _logFlow.tryEmit(it) }
+        log("INFO: preparing directory layout...")
+        val staged = File(stagedRootfsDir)
+        if (staged.exists()) staged.deleteRecursively()
+        if (!staged.mkdirs()) {
+            val error = "failed to create staging directory: $stagedRootfsDir"
+            log("ERROR: $error")
+            return Result.failure(IllegalStateException(error))
+        }
+
+        log("INFO: extracting rootfs with built-in decoder...")
+        val extractResult = ProotRootfsExtractor.extract(rootfsArchive, staged, log)
+        if (extractResult.isFailure) {
+            val error = extractResult.exceptionOrNull()
+            log("ERROR: rootfs extraction failed: ${error?.message}")
+            log("ERROR: removed invalid archive; please download again")
+            staged.deleteRecursively()
+            rootfsArchive.delete()
+            return Result.failure(
+                IllegalStateException("rootfs extraction failed; archive may be incomplete or invalid", error)
+            )
+        }
+
+        val finalizeResult = ProotRootfsExtractor.finalizeStagedRootfs(
+            stagedRootfsDir = staged,
+            rootfsDir = File(rootfsDir),
+            backupRootfsDir = File(backupRootfsDir),
+            profileInstalledDir = File(profileInstalledDir),
+            extractedMarker = getMarkerExtracted(distroId),
+            onLog = log
+        )
+        if (finalizeResult.isFailure) {
+            val error = finalizeResult.exceptionOrNull()
+            log("ERROR: ${error?.message}")
+            staged.deleteRecursively()
+            return Result.failure(error ?: IllegalStateException("rootfs finalization failed"))
+        }
+        return Result.success(Unit)
     }
 
     suspend fun setupRootfs(context: Context, distroId: String): Result<Unit> {
@@ -236,6 +309,61 @@ object ChrootInstaller {
             context.assets.open(setupName).use { input ->
                 setupTarget.outputStream().use { output ->
                     input.copyTo(output)
+                }
+            }
+
+            // --- [Winland OS: Proot (rootless) setup path] ---
+            if (ExecutionModeManager.isProot(context)) {
+                _logFlow.tryEmit("INFO: Deploying proot backend (rootless mode)...")
+                try {
+                    ProotManager.deployProot(context)
+                    ProotManager.prepareGuestDirs(rootfsDir, filesDir, tmpDir)
+                } catch (error: Exception) {
+                    _logFlow.tryEmit("ERROR: proot deploy failed: ${error.message}")
+                    return Result.failure(error)
+                }
+
+                // Stage the distro setup script INSIDE the guest (the root
+                // path does this via the winland-setup native binary, which
+                // performs mounts and is therefore root-only). Pure file copy
+                // as the app UID — no privilege needed.
+                try {
+                    val guestSetupDir = File("$rootfsDir/tmp")
+                    if (!guestSetupDir.exists()) guestSetupDir.mkdirs()
+                    val guestSetup = File(guestSetupDir, setupName)
+                    setupTarget.copyTo(guestSetup, overwrite = true)
+                    guestSetup.setExecutable(true, false)
+                    _logFlow.tryEmit("INFO: staged $setupName into guest /tmp")
+                } catch (error: Exception) {
+                    _logFlow.tryEmit("ERROR: failed to stage setup script into guest: ${error.message}")
+                    return Result.failure(error)
+                }
+
+                _logFlow.tryEmit("INFO: Executing rootless (proot) environment setup...")
+                val externalStoragePath = Environment.getExternalStorageDirectory().path
+                val prootScriptFile = File(context.cacheDir, "post_setup_rootfs_proot.sh")
+                val prootScript = ChrootScriptBuilder.buildProotPostSetupScript(
+                    filesDir = filesDir,
+                    rootfsDir = rootfsDir,
+                    tmpDir = tmpDir,
+                    nativeLibDir = context.applicationInfo.nativeLibraryDir,
+                    profileInstalledDir = profileInstalledDir,
+                    externalStoragePath = externalStoragePath,
+                    distroId = distroId,
+                    installedMarker = getMarkerInstalled(distroId)
+                )
+                prootScriptFile.writeText(prootScript)
+                val prootResult = dispatchCommand(
+                    context = context,
+                    command = "sh ${prootScriptFile.absolutePath}",
+                    timeoutMinutes = 240,
+                    operation = "postSetupRootfsProot"
+                )
+
+                return if (prootResult.isSuccess && installedMarker.exists()) {
+                    Result.success(Unit)
+                } else {
+                    Result.failure(prootResult.exceptionOrNull() ?: IllegalStateException("proot setup did not create marker file"))
                 }
             }
 
@@ -347,18 +475,40 @@ object ChrootInstaller {
             return Result.failure(error)
         }
 
-        val bootScript = ChrootScriptBuilder.buildRunScript(
-            filesDir = filesDir,
-            rootfsDir = rootfsDir,
-            tmpDir = tmpDir,
-            externalStoragePath = externalStoragePath,
-            density = density,
-            distroId = distroId
-        )
+        val bootScript = if (ExecutionModeManager.isProot(context)) {
+            _logFlow.tryEmit("INFO: booting desktop via proot (rootless mode)")
+            try {
+                ProotManager.deployProot(context)
+                ProotManager.prepareGuestDirs(rootfsDir, filesDir, tmpDir)
+            } catch (error: Exception) {
+                _logFlow.tryEmit("ERROR: proot deploy failed: ${error.message}")
+                isBootingOrRunning.set(false)
+                return Result.failure(error)
+            }
+            ChrootScriptBuilder.buildProotRunScript(
+                filesDir = filesDir,
+                rootfsDir = rootfsDir,
+                tmpDir = tmpDir,
+                nativeLibDir = context.applicationInfo.nativeLibraryDir,
+                externalStoragePath = externalStoragePath,
+                density = density,
+                distroId = distroId
+            )
+        } else {
+            ChrootScriptBuilder.buildRunScript(
+                filesDir = filesDir,
+                rootfsDir = rootfsDir,
+                tmpDir = tmpDir,
+                externalStoragePath = externalStoragePath,
+                density = density,
+                distroId = distroId
+            )
+        }
 
         return try {
             NativeBridge.startRecording()
-            val result = executeRootCommand(
+            val result = dispatchCommand(
+                context = context,
                 command = bootScript,
                 timeoutMinutes = 30,
                 operation = "startChroot"
@@ -375,12 +525,18 @@ object ChrootInstaller {
     suspend fun stopChroot(context: Context, distroId: String = "ubuntu"): Result<Unit> {
         val filesDir = context.getUnifiedFilesDir()
         val rootfsDir = context.getUnifiedRootfsDir(distroId)
+        val proot = ExecutionModeManager.isProot(context)
 
-        val stopScript = ChrootScriptBuilder.buildStopScript(filesDir, rootfsDir)
+        val stopScript = if (proot) {
+            ChrootScriptBuilder.buildProotStopScript(filesDir, rootfsDir)
+        } else {
+            ChrootScriptBuilder.buildStopScript(filesDir, rootfsDir)
+        }
 
-        _logFlow.tryEmit("INFO: stopping rootful chroot session...")
+        _logFlow.tryEmit(if (proot) "INFO: stopping proot session..." else "INFO: stopping rootful chroot session...")
         NativeBridge.stopRecording()
-        val result = executeRootCommand(
+        val result = dispatchCommand(
+            context = context,
             command = stopScript,
             timeoutMinutes = 10,
             operation = "stopChroot"
@@ -438,6 +594,69 @@ object ChrootInstaller {
             }
         }
     }
+    /**
+     * Dispatches [command] to the root (`su`) or rootless (`sh` direct)
+     * runner depending on the active [ExecutionModeManager] mode.
+     */
+    suspend fun dispatchCommand(
+        context: Context,
+        command: String,
+        timeoutMinutes: Long,
+        operation: String
+    ): Result<Unit> {
+        return if (ExecutionModeManager.isProot(context)) {
+            executeDirectCommand(
+                command = command,
+                timeoutMinutes = timeoutMinutes,
+                operation = operation
+            )
+        } else {
+            executeRootCommand(
+                command = command,
+                timeoutMinutes = timeoutMinutes,
+                operation = operation
+            )
+        }
+    }
+
+    suspend fun executeDirectCommand(
+        command: String,
+        timeoutMinutes: Long,
+        operation: String
+    ): Result<Unit> {
+        return rootCommandMutex.withLock {
+            Log.i(TAG, "Direct command started: op=$operation timeout=${timeoutMinutes}m")
+            val result = RootCommandRunner.executeDirect(
+                command = command,
+                timeout = timeoutMinutes,
+                timeUnit = TimeUnit.MINUTES,
+                onStdout = { line ->
+                    Log.i(TAG, "Direct stdout: $line")
+                    _logFlow.tryEmit(line)
+                },
+                onStderr = { line ->
+                    Log.e(TAG, "Direct stderr: $line")
+                    _logFlow.tryEmit("ERROR: $line")
+                }
+            )
+
+            if (result.isFailure) {
+                val error = result.exceptionOrNull()
+                val message = error?.message ?: "$operation failed"
+                if (error is TimeoutException || message.contains("exit code -1")) {
+                    _logFlow.tryEmit("ERROR: $operation timed out after ${timeoutMinutes}m")
+                } else {
+                    _logFlow.tryEmit("CRITICAL ERROR: $message")
+                }
+            }
+
+            Log.i(TAG, "Direct command execution finished: op=$operation success=${result.isSuccess}")
+            result.mapCatching { Unit }.recoverCatching { error ->
+                throw IllegalStateException(error.message ?: "$operation failed", error)
+            }
+        }
+    }
+
     private fun deployInternalBusybox(context: Context, filesDir: String) {
         val binDir = File(filesDir, "bin")
         if (!binDir.exists()) binDir.mkdirs()
