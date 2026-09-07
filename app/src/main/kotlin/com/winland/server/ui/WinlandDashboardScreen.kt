@@ -102,13 +102,16 @@ import java.util.UUID
 import com.winland.server.NativeBridge
 import com.winland.server.engine.ChrootInstaller
 import com.winland.server.utils.getInstalledDistros
+import com.winland.server.ui.theme.ActionGreen
+import com.winland.server.ui.theme.ActionBlue
+import com.winland.server.ui.theme.ActionRed
 
 // Semantic action colors: Run = green, Restart = blue, Stop = red.
-// Explicit hues readable on both dark and light themes (stepping stone
+// Single hues readable on both dark and light themes (stepping stone
 // toward the full blue-identity redesign, where these become theme roles).
-private val RunGreen = Color(0xFF43A047)
-private val RestartBlue = Color(0xFF1E88E5)
-private val StopRed = Color(0xFFE53935)
+private val RunGreen = ActionGreen
+private val RestartBlue = ActionBlue
+private val StopRed = ActionRed
 
 data class WinlandDashboardActions(
     val onRequestUsb: () -> Unit,

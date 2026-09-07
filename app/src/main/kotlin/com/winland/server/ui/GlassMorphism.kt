@@ -10,11 +10,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.winland.server.ui.theme.WinlandCardShape
+import com.winland.server.ui.theme.WinlandControlShape
+
+// Legacy names kept for the existing 12 call sites; now backed by the
+// unified design tokens. New code should use WinlandCard/SelectableRow.
 
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
-    shape: RoundedCornerShape = RoundedCornerShape(24.dp),
+    shape: RoundedCornerShape = WinlandCardShape,
     content: @Composable ColumnScope.() -> Unit
 ) {
     ElevatedCard(
@@ -31,7 +36,7 @@ fun GlassSurface(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
-    shape: RoundedCornerShape = RoundedCornerShape(12.dp),
+    shape: RoundedCornerShape = WinlandControlShape,
     enabled: Boolean = true,
     content: @Composable () -> Unit
 ) {
