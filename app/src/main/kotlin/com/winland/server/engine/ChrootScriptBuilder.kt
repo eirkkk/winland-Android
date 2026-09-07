@@ -548,7 +548,12 @@ CHROOT_EOF
     // via ptrace). Everything runs as the app UID in app-private storage.
     // ------------------------------------------------------------------
 
-    private fun prootPrelude(filesDir: String, tmpDir: String, nativeLibDir: String): String {
+    private fun prootPrelude(
+        filesDir: String,
+        tmpDir: String,
+        nativeLibDir: String,
+        noSeccomp: Boolean = true
+    ): String {
         return """
             # Prefer the native-library copy (exec-allowed under W^X on
             # targetSdk 29+); fall back to the legacy filesDir/bin copy.
@@ -575,7 +580,7 @@ CHROOT_EOF
             if [ -f "${'$'}PROOT_LOADER_32" ]; then
                 export PROOT_LOADER_32
             fi
-            PROOT_NO_SECCOMP=1
+            PROOT_NO_SECCOMP=${if (noSeccomp) "1" else "0"}
             export PROOT_NO_SECCOMP
 
             proot_enter() {
@@ -598,15 +603,23 @@ CHROOT_EOF
                 mkdir -p "$tmpDir/dev/shm" 2>/dev/null || true
                 chmod 1777 "$tmpDir/dev/shm" 2>/dev/null || true
                 mkdir -p "${'$'}PROOT_ROOTFS/dev/shm" 2>/dev/null || true
+                # SELinux mask: an empty dir over guest /sys/fs/selinux so
+                # guest tools see SELinux as absent instead of erroring.
+                mkdir -p "${'$'}PROOT_ROOTFS/sys/.empty" 2>/dev/null || true
                 "${'$'}PROOT_BIN" -0 -r "${'$'}PROOT_ROOTFS" -w /root --link2symlink \
                     -b /proc \
                     -b /sys \
                     -b /dev \
                     -b /dev/pts \
                     -b "$tmpDir/dev/shm:/dev/shm" \
+                    -b "${'$'}PROOT_ROOTFS/sys/.empty:/sys/fs/selinux" \
+                    -b /proc/self/fd:/dev/fd \
+                    -b /proc/self/fd/0:/dev/stdin \
+                    -b /proc/self/fd/1:/dev/stdout \
+                    -b /proc/self/fd/2:/dev/stderr \
                     -b /dev/null:/dev/null \
                     -b /dev/zero:/dev/zero \
-                    -b /dev/random:/dev/random \
+                    -b /dev/urandom:/dev/random \
                     -b /dev/urandom:/dev/urandom \
                     -b "$tmpDir:/tmp" \
                     -b "${'$'}PROOT_EXT_SRC:/external_storage" \
@@ -635,13 +648,14 @@ CHROOT_EOF
         profileInstalledDir: String,
         externalStoragePath: String,
         distroId: String,
-        installedMarker: String
+        installedMarker: String,
+        noSeccomp: Boolean = true
     ): String {
         return """
             #!/system/bin/sh
             set -e
 
-            ${prootPrelude(filesDir, tmpDir, nativeLibDir)}
+            ${prootPrelude(filesDir, tmpDir, nativeLibDir, noSeccomp)}
 
             # 1. DNS and APT fixes (host side, app-private storage: no privileges needed)
             mkdir -p $rootfsDir/etc/apt/apt.conf.d
@@ -684,7 +698,8 @@ PROOT_EOF
         nativeLibDir: String,
         externalStoragePath: String,
         density: Float,
-        distroId: String
+        distroId: String,
+        noSeccomp: Boolean = true
     ): String {
         val desktopScale = density.coerceIn(0.5f, 1.5f)
         return """
@@ -692,7 +707,7 @@ PROOT_EOF
             set +e
             set -x
 
-            ${prootPrelude(filesDir, tmpDir, nativeLibDir)}
+            ${prootPrelude(filesDir, tmpDir, nativeLibDir, noSeccomp)}
 
             RUNTIME_LOG=$tmpDir/chroot-run.log
             echo "-----------------------------------" >> "${'$'}RUNTIME_LOG"
@@ -708,9 +723,15 @@ PROOT_EOF
             GUEST_SHARED_SOCKET_DIR="$rootfsDir/tmp"
             mkdir -p "$tmpDir" "${'$'}SHARED_SOCKET_DIR" "${'$'}GUEST_SHARED_SOCKET_DIR" 2>/dev/null || true
             mkdir -p $rootfsDir/proc $rootfsDir/sys $rootfsDir/dev $rootfsDir/dev/pts 2>/dev/null || true
-            mkdir -p $rootfsDir/external_storage $rootfsDir/tmp $rootfsDir/dev/shm 2>/dev/null || true
+            mkdir -p $rootfsDir/external_storage $rootfsDir/tmp $rootfsDir/dev/shm $rootfsDir/sys/.empty 2>/dev/null || true
             mkdir -p $rootfsDir/tmp/pulse-runtime $rootfsDir/tmp/audio_bridge 2>/dev/null || true
             chmod 777 $rootfsDir/tmp/pulse-runtime 2>/dev/null || true
+
+            # Rewrite DNS every launch (DHCP/network changes invalidate the
+            # setup-time resolv.conf; guest has no DHCP client under proot).
+            mkdir -p $rootfsDir/etc 2>/dev/null || true
+            echo 'nameserver 1.1.1.1' > $rootfsDir/etc/resolv.conf 2>/dev/null || true
+            echo 'nameserver 8.8.8.8' >> $rootfsDir/etc/resolv.conf 2>/dev/null || true
 
             if [ -S "${'$'}SHARED_SOCKET_DIR/wayland-0" ]; then
                 chmod 777 "${'$'}SHARED_SOCKET_DIR/wayland-0" 2>/dev/null || true

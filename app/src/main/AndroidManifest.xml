@@ -48,14 +48,6 @@
             android:screenOrientation="fullUser"
             android:theme="@style/Theme.WinlandServer" />
 
-        <activity
-            android:name=".TerminalActivity"
-            android:exported="false"
-            android:launchMode="singleTop"
-            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|density|layoutDirection"
-            android:screenOrientation="fullUser"
-            android:theme="@style/Theme.WinlandServer" />
-
         <!-- CleanupReceiver: unmounts chroot bind-mounts on device shutdown/reboot
              to prevent kernel mount leaks affecting /sdcard and other paths. -->
         <receiver

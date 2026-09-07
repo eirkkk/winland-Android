@@ -35,6 +35,28 @@ object ProotManager {
     const val PROOT_NATIVE_LIB = "libproot.so"
     const val PROOT_LOADER_NATIVE_LIB = "libproot-loader.so"
 
+    private const val PREFS = "winland_prefs"
+    private const val KEY_NO_SECCOMP = "proot_no_seccomp"
+
+    /**
+     * Whether proot runs with seccomp acceleration disabled
+     * (`PROOT_NO_SECCOMP=1`, default true = compatible but slower).
+     * Uncheck in Settings to try the faster seccomp-filtered path;
+     * restart the desktop to take effect.
+     */
+    fun noSeccomp(context: Context): Boolean =
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_NO_SECCOMP, true)
+
+    fun setNoSeccomp(context: Context, noSeccomp: Boolean) {
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_NO_SECCOMP, noSeccomp)
+            .apply()
+    }
+
     /** Directory the OS extracts jniLibs .so files into (exec-allowed). */
     fun nativeLibDir(context: Context): String =
         context.applicationInfo.nativeLibraryDir
@@ -126,39 +148,6 @@ object ProotManager {
     }
 
     /**
-     * Builds the common proot argument prefix for entering [rootfsDir].
-     *
-     * Uses `-0` (fake root uid/gid inside the guest) so package managers
-     * and desktop services behave as if running as root.
-     */
-    fun baseArgs(
-        context: Context,
-        rootfsDir: String,
-        filesDir: String,
-        tmpDir: String,
-        externalStoragePath: String
-    ): List<String> {
-        return listOf(
-            prootPath(context),
-            "-0",
-            "-r", rootfsDir,
-            "-w", "/root",
-            "--link2symlink",
-            "-b", "/proc",
-            "-b", "/sys",
-            "-b", "/dev",
-            "-b", "/dev/pts",
-            "-b", "$tmpDir/dev/shm:/dev/shm",
-            "-b", "/dev/null:/dev/null",
-            "-b", "/dev/zero:/dev/zero",
-            "-b", "/dev/random:/dev/random",
-            "-b", "/dev/urandom:/dev/urandom",
-            "-b", "$tmpDir:/tmp",
-            "-b", "$externalStoragePath:$rootfsDir/external_storage"
-        )
-    }
-
-    /**
      * Host-side directory preparation for a proot session. Everything runs
      * as the app UID inside app-private storage, so no privileges needed.
      */
@@ -171,6 +160,7 @@ object ProotManager {
             "$rootfsDir/dev/shm",
             "$rootfsDir/tmp",
             "$rootfsDir/external_storage",
+            "$rootfsDir/sys/.empty",
             "$rootfsDir/tmp/pulse-runtime",
             "$rootfsDir/tmp/audio_bridge",
             tmpDir,

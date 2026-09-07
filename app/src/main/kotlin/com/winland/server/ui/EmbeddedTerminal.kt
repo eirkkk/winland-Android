@@ -186,7 +186,7 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
                 ProotManager.prepareGuestDirs(rootfsDir, unifiedFilesDir, "$unifiedFilesDir/tmp")
             }
             val prootScriptFile = java.io.File(physicalFilesDir, "proot-dashboard_${distroId}_${sessionId}.sh")
-            prootScriptFile.writeText(buildProotCommand(rootfsDir, unifiedFilesDir, distroId, context.applicationInfo.nativeLibraryDir))
+            prootScriptFile.writeText(buildProotCommand(rootfsDir, unifiedFilesDir, distroId, context.applicationInfo.nativeLibraryDir, ProotManager.noSeccomp(context)))
             prootScriptFile.setExecutable(true, false)
             cwd = "/"
             // argv must include the interpreter: sh <script>. Passing only
@@ -412,7 +412,7 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
         return "/system/bin/sh"
     }
 
-    private fun buildProotCommand(rootfsDir: String, filesDir: String, distroId: String, nativeLibDir: String): String {
+    private fun buildProotCommand(rootfsDir: String, filesDir: String, distroId: String, nativeLibDir: String, noSeccomp: Boolean = true): String {
         val tmpDir = "$filesDir/tmp"
         val ps1 = if (distroId == "kali") {
             "'\\[\\e[31m\\]root@winland_kali:\\w# \\[\\e[0m\\]'"
@@ -434,12 +434,12 @@ export PROOT_TMP_DIR="${'$'}TMP_DIR/proot-tmp"
 mkdir -p "${'$'}PROOT_TMP_DIR" 2>/dev/null || true
 [ -f "${'$'}PROOT_LOADER_CANDIDATE" ] && export PROOT_LOADER="${'$'}PROOT_LOADER_CANDIDATE"
 [ -f "${'$'}FILES_DIR/bin/proot-loader32" ] && export PROOT_LOADER_32="${'$'}FILES_DIR/bin/proot-loader32"
-export PROOT_NO_SECCOMP=1
+export PROOT_NO_SECCOMP=${if (noSeccomp) "1" else "0"}
 
 [ ! -d "${'$'}ROOTFS_DIR" ] && { echo "ERROR: rootfs missing: ${'$'}ROOTFS_DIR" >&2; sleep 5; exit 1; }
 [ ! -x "${'$'}PROOT_BIN" ] && { echo "ERROR: proot binary missing or not executable: ${'$'}PROOT_BIN" >&2; sleep 5; exit 1; }
 
-mkdir -p "${'$'}ROOTFS_DIR/proc" "${'$'}ROOTFS_DIR/sys" "${'$'}ROOTFS_DIR/dev" "${'$'}ROOTFS_DIR/dev/pts" "${'$'}ROOTFS_DIR/tmp" "${'$'}ROOTFS_DIR/dev/shm" "${'$'}ROOTFS_DIR/external_storage" 2>/dev/null || true
+mkdir -p "${'$'}ROOTFS_DIR/proc" "${'$'}ROOTFS_DIR/sys" "${'$'}ROOTFS_DIR/dev" "${'$'}ROOTFS_DIR/dev/pts" "${'$'}ROOTFS_DIR/tmp" "${'$'}ROOTFS_DIR/dev/shm" "${'$'}ROOTFS_DIR/sys/.empty" "${'$'}ROOTFS_DIR/external_storage" 2>/dev/null || true
 mkdir -p "${'$'}TMP_DIR" "${'$'}ROOTFS_DIR${'$'}FILES_DIR/tmp" 2>/dev/null || true
 mkdir -p "${'$'}TMP_DIR/dev/shm" 2>/dev/null || true
 chmod 1777 "${'$'}TMP_DIR/dev/shm" 2>/dev/null || true
@@ -458,7 +458,9 @@ export PULSE_SERVER=unix:/tmp/pulse-runtime/native
 exec "${'$'}PROOT_BIN" -0 -r "${'$'}ROOTFS_DIR" -w /root --link2symlink \
     -b /proc -b /sys -b /dev -b /dev/pts \
     -b "${'$'}TMP_DIR/dev/shm:/dev/shm" \
-    -b /dev/null:/dev/null -b /dev/zero:/dev/zero -b /dev/random:/dev/random -b /dev/urandom:/dev/urandom \
+    -b "${'$'}ROOTFS_DIR/sys/.empty:/sys/fs/selinux" \
+    -b /proc/self/fd:/dev/fd -b /proc/self/fd/0:/dev/stdin -b /proc/self/fd/1:/dev/stdout -b /proc/self/fd/2:/dev/stderr \
+    -b /dev/null:/dev/null -b /dev/zero:/dev/zero -b /dev/urandom:/dev/random -b /dev/urandom:/dev/urandom \
     -b "${'$'}TMP_DIR:/tmp" \
     -b "${'$'}EXT_STORAGE:/external_storage" \
     /bin/bash --login

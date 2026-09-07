@@ -351,7 +351,8 @@ object ChrootInstaller {
                     profileInstalledDir = profileInstalledDir,
                     externalStoragePath = externalStoragePath,
                     distroId = distroId,
-                    installedMarker = getMarkerInstalled(distroId)
+                    installedMarker = getMarkerInstalled(distroId),
+                    noSeccomp = ProotManager.noSeccomp(context)
                 )
                 prootScriptFile.writeText(prootScript)
                 val prootResult = dispatchCommand(
@@ -568,7 +569,8 @@ object ChrootInstaller {
                 nativeLibDir = context.applicationInfo.nativeLibraryDir,
                 externalStoragePath = externalStoragePath,
                 density = density,
-                distroId = distroId
+                distroId = distroId,
+                noSeccomp = ProotManager.noSeccomp(context)
             )
         } else {
             ChrootScriptBuilder.buildRunScript(

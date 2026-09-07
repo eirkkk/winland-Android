@@ -44,6 +44,10 @@ pub enum RoutedInputEvent {
 		id: i32,
 		point: TouchPoint,
 	},
+	TouchMiddleClick {
+		id: i32,
+		point: TouchPoint,
+	},
 	KeyDown {
 		keycode: i32,
 	},
@@ -168,7 +172,11 @@ impl InputRouter {
                             last_x: x, last_y: y, id,
                         };
                         if dx.abs() > 0.001 || dy.abs() > 0.001 {
-                            events.push(RoutedInputEvent::GestureScroll { dx, dy, rx: x, ry: y });
+                            // Normalize to 0..1 surface units, like the
+                            // multi-touch centroid path below: the axis
+                            // handler maps ~0.01 to one v120 click for both.
+                            let (w, h) = (self.last_surface_size.0.max(1) as f32, self.last_surface_size.1.max(1) as f32);
+                            events.push(RoutedInputEvent::GestureScroll { dx: dx / w, dy: dy / h, rx: x, ry: y });
                         }
                     }
                     TouchGestureState::Armed { start_x, start_y, id: sid }

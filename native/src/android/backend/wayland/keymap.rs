@@ -155,9 +155,13 @@ pub fn android_keycode_to_xkb_scancode(android_keycode: i32) -> u32 {
 		160 => 28,  // NUMPAD_ENTER
 		143 => 69,  // NUM_LOCK
 
-		// Fallback: if keycode looks already like evdev, pass through.
-		code if code > 0 && code < 256 => code as u32,
-		_ => 0,
+		// Unknown: drop with a warning instead of passing through as fake
+		// evdev (numeric collisions with the 0..256 range produce wrong
+		// keys). Downstream drops scancode 0 safely.
+		code => {
+			log::warn!("SmithayRuntime: unknown Android keycode {}, dropped", code);
+			0
+		}
 	};
 
 	if evdev == 0 {

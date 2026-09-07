@@ -485,6 +485,7 @@ impl WaylandServer {
                 handle.kill_client(id.clone(), DisconnectReason::ConnectionClosed);
             }
         }
+        self.runtime.prune_dead_surfaces();
     }
 
     pub fn connected_client_count(&mut self) -> usize {

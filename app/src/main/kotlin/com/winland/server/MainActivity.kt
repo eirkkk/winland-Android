@@ -126,7 +126,10 @@ class MainActivity : ComponentActivity() {
             setContent {
                 val themeSettings by uiViewModel.themeSettings.collectAsState()
 
-                WinlandServerTheme(darkTheme = if (themeSettings.followSystemTheme) isSystemInDarkTheme() else themeSettings.darkModeEnabled) {
+                WinlandServerTheme(
+                    darkTheme = if (themeSettings.followSystemTheme) isSystemInDarkTheme() else themeSettings.darkModeEnabled,
+                    dynamicColor = themeSettings.dynamicColorEnabled
+                ) {
                     val scope = rememberCoroutineScope()
                     var rootAvailableState by remember { mutableStateOf(false) }
                     var showModeDialog by remember { mutableStateOf(false) }

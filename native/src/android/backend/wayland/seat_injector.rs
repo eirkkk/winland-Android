@@ -11,6 +11,7 @@ pub struct SeatInjectionStats {
     pub touch_cancel: u64,
     pub touch_click: u64,
     pub touch_right_click: u64,
+    pub touch_middle_click: u64,
     pub key_down: u64,
     pub key_up: u64,
     pub text_commit: u64,
@@ -69,6 +70,9 @@ pub fn record_injection(event: &RoutedInputEvent) {
         }
         RoutedInputEvent::TouchRightClick { .. } => {
             guard.touch_right_click += 1;
+        }
+        RoutedInputEvent::TouchMiddleClick { .. } => {
+            guard.touch_middle_click += 1;
         }
     }
 }

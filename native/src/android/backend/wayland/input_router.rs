@@ -842,11 +842,85 @@ impl AndroidSeatRuntime {
         );
         pointer.frame(self);
         self.primary_touch_id = None;
-        engine_timing::emit_hybrid_trace(format!(
+        log::debug!(
             "TouchRightClick id={} x={:.1} y={:.1}",
             id, point.x, point.y
-        ));
+        );
         self.last_seat_dispatch = format!("touch_right_click id={} x={:.0} y={:.0}", id, point.x, point.y);
+    }
+
+    fn handle_touch_middle_click(&mut self, id: i32, point: &TouchPoint) {
+        // Mirror of right-click with the middle button (0x112). Releases an
+        // in-progress left-button drag first, like right-click does.
+        if self.pointer_button_pressed {
+            let pointer = self.pointer.clone();
+            pointer.button(
+                self,
+                &ButtonEvent {
+                    serial: SERIAL_COUNTER.next_serial(),
+                    time: engine_timing::now_ms_u32(),
+                    button: 0x110,
+                    state: ButtonState::Released,
+                },
+            );
+            pointer.frame(self);
+            self.pointer_button_pressed = false;
+            self.primary_touch_id = None;
+        }
+        if self.primary_touch_id.is_some() {
+            return;
+        }
+        self.primary_touch_id = Some(id);
+        let logical_xy = self.logical_pt(point.x, point.y);
+        let _ = self.apply_forced_focus_at("touch_middle_click", logical_xy.x as f32, logical_xy.y as f32);
+        let pointer = self.pointer.clone();
+        let location = logical_xy;
+        let focus = self.focused_surface.as_ref().and_then(|s| {
+            let origin = self
+                .wl_to_window
+                .get(s)
+                .and_then(|w| self.space.element_location(&WindowElement(w.clone())))
+                .map(|loc| (loc.x as f64, loc.y as f64).into())
+                .unwrap_or_else(|| (0.0, 0.0).into());
+            Some((s.clone(), origin))
+        });
+        let ct = engine_timing::now_ms_u32();
+        pointer.motion(
+            self,
+            focus,
+            &PointerMotionEvent {
+                location,
+                serial: SERIAL_COUNTER.next_serial(),
+                time: ct,
+            },
+        );
+        pointer.frame(self);
+        pointer.button(
+            self,
+            &ButtonEvent {
+                serial: SERIAL_COUNTER.next_serial(),
+                time: ct,
+                button: 0x112,
+                state: ButtonState::Pressed,
+            },
+        );
+        pointer.frame(self);
+        pointer.button(
+            self,
+            &ButtonEvent {
+                serial: SERIAL_COUNTER.next_serial(),
+                time: ct,
+                button: 0x112,
+                state: ButtonState::Released,
+            },
+        );
+        pointer.frame(self);
+        self.primary_touch_id = None;
+        log::debug!(
+            "TouchMiddleClick id={} x={:.1} y={:.1}",
+            id, point.x, point.y
+        );
+        self.last_seat_dispatch = format!("touch_middle_click id={} x={:.0} y={:.0}", id, point.x, point.y);
     }
 
     fn handle_touch_up(&mut self, id: i32) {
@@ -1160,6 +1234,10 @@ impl AndroidSeatRuntime {
                     self.handle_touch_down(*id, point, &focus);
                     self.handle_touch_right_click(*id, point);
                 }
+                RoutedInputEvent::TouchMiddleClick { id, point } => {
+                    self.handle_touch_down(*id, point, &focus);
+                    self.handle_touch_middle_click(*id, point);
+                }
                 _ => {}
             },
             WinlandInputMode::Trackpad => match event {
@@ -1190,6 +1268,10 @@ impl AndroidSeatRuntime {
                 RoutedInputEvent::TouchRightClick { id, point } => {
                     self.mouse_last_pos = (point.x, point.y);
                     self.handle_absolute_pointer_down(*id, point, Some(0x111));
+                }
+                RoutedInputEvent::TouchMiddleClick { id, point } => {
+                    self.mouse_last_pos = (point.x, point.y);
+                    self.handle_absolute_pointer_down(*id, point, Some(0x112));
                 }
                 RoutedInputEvent::TouchMove { id, point } => {
                     if self.primary_touch_id == Some(*id) && self.focused_surface.is_some() {

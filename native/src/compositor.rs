@@ -254,6 +254,7 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
                             };
                             let event: RoutedInputEvent = match action {
                                 0 | 5 if button == 0x111 => RoutedInputEvent::TouchRightClick { id: 0, point },
+                                0 | 5 if button == 0x112 => RoutedInputEvent::TouchMiddleClick { id: 0, point },
                                 0 | 5 => RoutedInputEvent::TouchDown { id: 0, point },
                                 2 => RoutedInputEvent::TouchMove { id: 0, point },
                                 1 | 6 => RoutedInputEvent::TouchUp { id: 0 },

@@ -66,6 +66,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -104,6 +105,7 @@ import com.winland.server.MainViewModel
 import java.util.UUID
 import com.winland.server.NativeBridge
 import com.winland.server.engine.ChrootInstaller
+import com.winland.server.engine.ProotManager
 import com.winland.server.utils.getInstalledDistros
 import com.winland.server.ui.theme.ActionGreen
 import com.winland.server.ui.theme.ActionBlue
@@ -424,6 +426,8 @@ fun WinlandDashboardScreen(
                                 viewModel = viewModel,
                                 followSystemTheme = themeSettings.followSystemTheme,
                                 darkModeEnabled = themeSettings.darkModeEnabled,
+                                dynamicColorEnabled = themeSettings.dynamicColorEnabled,
+                                onDynamicColorChanged = { viewModel.updateDynamicColor(it) },
                                 onThemeModeChanged = { followSystem, darkEnabled ->
                                     viewModel.updateThemeMode(followSystem, darkEnabled)
                                 },
@@ -549,7 +553,9 @@ private fun SettingsPanel(
     viewModel: MainViewModel,
     followSystemTheme: Boolean,
     darkModeEnabled: Boolean,
+    dynamicColorEnabled: Boolean,
     onThemeModeChanged: (Boolean, Boolean) -> Unit,
+    onDynamicColorChanged: (Boolean) -> Unit,
     onResolutionApplied: (String) -> Unit,
     onRequestUsb: () -> Unit,
     onStopChroot: () -> Unit,
@@ -700,6 +706,33 @@ private fun SettingsPanel(
                             }
                         }
                     }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    var seccompOff by remember {
+                        mutableStateOf(!ProotManager.noSeccomp(appContext))
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "proot seccomp acceleration",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Experimental: faster syscalls, may fail on some kernels. Restart the desktop to take effect.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = seccompOff,
+                        onCheckedChange = {
+                            seccompOff = it
+                            ProotManager.setNoSeccomp(appContext, !it)
+                        }
+                    )
                 }
 
                 if (showRestartDialog && pendingMode != null) {
@@ -869,6 +902,27 @@ private fun SettingsPanel(
                             }
                         }
                     }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Dynamic color",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Follow wallpaper colors on Android 12+",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = dynamicColorEnabled,
+                        onCheckedChange = onDynamicColorChanged
+                    )
                 }
 
             }

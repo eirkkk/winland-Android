@@ -84,7 +84,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     data class ThemeSettings(
         val followSystemTheme: Boolean,
-        val darkModeEnabled: Boolean
+        val darkModeEnabled: Boolean,
+        val dynamicColorEnabled: Boolean
     )
 
     private val prefs = application.getSharedPreferences("winland_prefs", Context.MODE_PRIVATE)
@@ -181,7 +182,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun readThemeSettings(): ThemeSettings {
         return ThemeSettings(
             followSystemTheme = prefs.getBoolean("theme_follow_system", true),
-            darkModeEnabled = prefs.getBoolean("theme_dark_enabled", true)
+            darkModeEnabled = prefs.getBoolean("theme_dark_enabled", true),
+            dynamicColorEnabled = prefs.getBoolean("theme_dynamic_color", true)
         )
     }
 
@@ -194,6 +196,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             followSystemTheme = followSystem,
             darkModeEnabled = darkEnabled
         )
+    }
+
+    fun updateDynamicColor(enabled: Boolean) {
+        prefs.edit().putBoolean("theme_dynamic_color", enabled).apply()
+        _themeSettings.value = _themeSettings.value.copy(dynamicColorEnabled = enabled)
     }
 
     fun setLogSearchQuery(query: String) {
