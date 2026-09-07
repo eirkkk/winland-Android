@@ -110,11 +110,17 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
         // systematic landscape offset can be diagnosed from logcat.
         let mut trace_next_touch = true;
         let mut last_stats_print = Instant::now();
+        // Idle frame-skip state: render on content/input activity, else a
+        // 500ms heartbeat (cursor blink/animations stay alive, steppy).
+        let mut last_commits = crate::android::backend::wayland::engine_timing::commit_count();
+        let mut last_render = Instant::now();
         log::info!("Compositor: runtime loop started");
 
         while thread_running.load(Ordering::Relaxed) {
             let loop_start = Instant::now();
+            let mut commands_this_spin = 0u32;
             while let Ok(cmd) = cmd_rx.try_recv() {
+                commands_this_spin += 1;
                 match cmd {
                     JniCommand::TouchInput { action, id, x, y } => {
                         if trace_next_touch && (action == 0 || action == 5) && id != -1 {
@@ -418,11 +424,21 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
                 if let Some(event) = input_router.poll_timer() {
                     server.runtime.inject_routed_event(&event);
                     crate::android::backend::wayland::seat_injector::record_injection(&event);
+                    commands_this_spin += 1;
                 }
 
                 server.pump();
                 crate::android::command_channel::set_clients_connected(server.connected_client_count() > 0);
-                server.runtime.render_all();
+                // Idle frame-skip: a static desktop renders at the 500ms
+                // heartbeat instead of 60fps of identical SHM copies.
+                // Any client commit, input command, or gesture forces fresh.
+                let commits = crate::android::backend::wayland::engine_timing::commit_count();
+                let heartbeat = last_render.elapsed() >= Duration::from_millis(500);
+                if commits != last_commits || commands_this_spin > 0 || heartbeat {
+                    server.runtime.render_all();
+                    last_render = Instant::now();
+                    last_commits = commits;
+                }
             }
             flush_deferred_composite(&mut backend_state, &render_rx);
             render_background_tick(&backend_state);

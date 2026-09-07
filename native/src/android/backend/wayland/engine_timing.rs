@@ -75,6 +75,19 @@ pub fn set_hybrid_trace_enabled(enabled: bool) {
     HYBRID_TRACE_ENABLED.store(enabled, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Client commit counter for idle frame-skipping: the compositor loop
+/// renders on commits/input, plus a slow heartbeat, instead of 60fps of
+/// identical frames on a static desktop (major CPU/battery saver).
+static COMMIT_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn note_commit() {
+    COMMIT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn commit_count() -> u64 {
+    COMMIT_COUNT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[cfg(feature = "smithay_android")]
 #[allow(dead_code)]
 pub(crate) fn rect_contains_f32(rect: &(f32, f32, f32, f32), x: f32, y: f32) -> bool {

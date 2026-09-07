@@ -380,6 +380,8 @@ impl CompositorHandler for AndroidSeatRuntime {
         // No direct render_all() here: the paced compositor loop renders
         // within ~1 frame anyway. Rendering synchronously per commit
         // duplicated the loop's full render and stalled protocol dispatch.
+        // Signal the loop instead (idle frame-skip counter).
+        crate::android::backend::wayland::engine_timing::note_commit();
 
         self.sync_text_input_to_android();
     }
