@@ -58,6 +58,23 @@ pub fn emit_hybrid_trace(message: String) {
     log::debug!("{}", message);
 }
 
+/// Synchronous hybrid traces cost a syscall plus format! on every
+/// touch/mouse move. Default OFF; flip for deep input debugging.
+/// NOTE: call sites must check hybrid_trace_enabled() BEFORE format!,
+/// otherwise the allocation happens anyway.
+static HYBRID_TRACE_ENABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[inline(always)]
+pub fn hybrid_trace_enabled() -> bool {
+    HYBRID_TRACE_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[allow(dead_code)]
+pub fn set_hybrid_trace_enabled(enabled: bool) {
+    HYBRID_TRACE_ENABLED.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
 #[cfg(feature = "smithay_android")]
 #[allow(dead_code)]
 pub(crate) fn rect_contains_f32(rect: &(f32, f32, f32, f32), x: f32, y: f32) -> bool {

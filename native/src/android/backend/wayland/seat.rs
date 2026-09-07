@@ -1229,7 +1229,7 @@ impl AndroidSeatRuntime {
 
         static RENDER_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let frame = RENDER_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let log_this = frame < 300 || frame % 60 == 0;
+        let log_this = frame < 5 || frame % 600 == 0;
 
         if log_this {
             log::info!(
@@ -1605,7 +1605,10 @@ impl AndroidSeatRuntime {
         }
 
         if !render_list.is_empty() {
-            let _ = self.render_sender.send(render_list);
+            // Bounded channel: drop (stale) frames when the consumer lags
+            // instead of growing memory unboundedly; the next spin renders
+            // fresh anyway.
+            let _ = self.render_sender.try_send(render_list);
         }
 
         for elem in self.space.elements() {

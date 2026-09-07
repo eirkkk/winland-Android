@@ -509,7 +509,7 @@ impl AndroidSeatRuntime {
     }
 
     fn handle_absolute_pointer_down(&mut self, id: i32, point: &TouchPoint, button: Option<u32>) {
-        log::info!("[MOUSE_DIAG] abs_ptr_down id={} x={:.0} y={:.0} button={:?}", id, point.x, point.y, button);
+        log::debug!("[MOUSE_DIAG] abs_ptr_down id={} x={:.0} y={:.0} button={:?}", id, point.x, point.y, button);
         if self.primary_touch_id.is_some() {
             return;
         }
@@ -559,10 +559,12 @@ impl AndroidSeatRuntime {
                 ));
             }
         } else {
-            engine_timing::emit_hybrid_trace(format!(
-                "AbsoluteMouse pointer_motion_only id={} x={:.1} y={:.1}",
-                id, point.x, point.y
-            ));
+            if engine_timing::hybrid_trace_enabled() {
+                engine_timing::emit_hybrid_trace(format!(
+                    "AbsoluteMouse pointer_motion_only id={} x={:.1} y={:.1}",
+                    id, point.x, point.y
+                ));
+            }
         }
         self.last_seat_dispatch =
             format!("abs_mouse_down id={} x={:.0} y={:.0}", id, point.x, point.y);
@@ -575,7 +577,7 @@ impl AndroidSeatRuntime {
         point: &TouchPoint,
         focus: &Option<WlSurface>,
     ) {
-        log::info!("[MOUSE_DIAG] abs_ptr_move id={} x={:.0} y={:.0}", id, point.x, point.y);
+        log::debug!("[MOUSE_DIAG] abs_ptr_move id={} x={:.0} y={:.0}", id, point.x, point.y);
         if self.primary_touch_id != Some(id) {
             return;
         }
@@ -599,16 +601,18 @@ impl AndroidSeatRuntime {
             },
         );
         pointer.frame(self);
-        engine_timing::emit_hybrid_trace(format!(
-            "AbsoluteMouse pointer_move id={} x={:.1} y={:.1}",
-            id, point.x, point.y
-        ));
+        if engine_timing::hybrid_trace_enabled() {
+            engine_timing::emit_hybrid_trace(format!(
+                "AbsoluteMouse pointer_move id={} x={:.1} y={:.1}",
+                id, point.x, point.y
+            ));
+        }
         self.last_seat_dispatch =
             format!("abs_mouse_move id={} x={:.0} y={:.0}", id, point.x, point.y);
     }
 
     fn handle_absolute_pointer_up(&mut self, id: i32) {
-        log::info!("[MOUSE_DIAG] abs_ptr_up id={}", id);
+        log::debug!("[MOUSE_DIAG] abs_ptr_up id={}", id);
         if self.primary_touch_id != Some(id) {
             return;
         }
@@ -701,10 +705,12 @@ impl AndroidSeatRuntime {
             },
         );
         touch.frame(self);
-        engine_timing::emit_hybrid_trace(format!(
-            "TouchOnly touch_move id={} x={:.1} y={:.1}",
-            id, point.x, point.y
-        ));
+        if engine_timing::hybrid_trace_enabled() {
+            engine_timing::emit_hybrid_trace(format!(
+                "TouchOnly touch_move id={} x={:.1} y={:.1}",
+                id, point.x, point.y
+            ));
+        }
         self.last_seat_dispatch = format!("touch_move id={} x={:.0} y={:.0}", id, point.x, point.y);
         if let Some(entry) = self.swipe_starts.get_mut(&id) {
             entry.2 = point.x;
@@ -963,7 +969,7 @@ impl AndroidSeatRuntime {
         if self.current_input_mode != WinlandInputMode::Mouse {
             return;
         }
-        log::info!("[MOUSE_DIAG] inject_mouse_position x={:.0} y={:.0} t={}", x, y, time);
+        log::debug!("[MOUSE_DIAG] inject_mouse_position x={:.0} y={:.0} t={}", x, y, time);
         if self.focused_surface.is_none() {
             self.apply_forced_focus("mouse_pos");
         }
@@ -989,7 +995,9 @@ impl AndroidSeatRuntime {
         );
         pointer.frame(self);
         self.injected_events += 1;
-        engine_timing::emit_hybrid_trace(format!("MousePosition x={:.1} y={:.1} t={}", x, y, time));
+        if engine_timing::hybrid_trace_enabled() {
+            engine_timing::emit_hybrid_trace(format!("MousePosition x={:.1} y={:.1} t={}", x, y, time));
+        }
         self.last_seat_dispatch = format!("mouse_pos x={:.0} y={:.0}", x, y);
     }
 
@@ -1219,10 +1227,12 @@ impl AndroidSeatRuntime {
                                 },
                             );
                             p.frame(self);
-                            engine_timing::emit_hybrid_trace(format!(
-                                "Mouse constrained_relative id={} dx={:.1} dy={:.1}",
-                                id, dx, dy
-                            ));
+                            if engine_timing::hybrid_trace_enabled() {
+                                engine_timing::emit_hybrid_trace(format!(
+                                    "Mouse constrained_relative id={} dx={:.1} dy={:.1}",
+                                    id, dx, dy
+                                ));
+                            }
                             self.last_seat_dispatch = format!(
                                 "mouse_constrained_rel id={} dx={:.0} dy={:.0}",
                                 id, dx, dy

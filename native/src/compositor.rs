@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::sync::mpsc;
 use std::path::Path;
 use std::fs;
@@ -64,7 +64,7 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
     let thread_running = Arc::clone(&running);
     let thread_socket_dir = socket_dir.clone();
     let (startup_tx, startup_rx) = mpsc::channel::<Result<(), String>>();
-    let (render_tx, render_rx) = crossbeam_channel::unbounded::<Vec<RenderItem>>();
+    let (render_tx, render_rx) = crossbeam_channel::bounded::<Vec<RenderItem>>(4);
 
     let worker = thread::spawn(move || {
         let mut wayland_server = match crate::android::backend::wayland::smithay_runtime::WaylandServer::bind(
@@ -109,9 +109,11 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
         // logs raw/adjusted/surface/offsets/scale for the next tap so a
         // systematic landscape offset can be diagnosed from logcat.
         let mut trace_next_touch = true;
+        let mut last_stats_print = Instant::now();
         log::info!("Compositor: runtime loop started");
 
         while thread_running.load(Ordering::Relaxed) {
+            let loop_start = Instant::now();
             while let Ok(cmd) = cmd_rx.try_recv() {
                 match cmd {
                     JniCommand::TouchInput { action, id, x, y } => {
@@ -425,42 +427,49 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
             flush_deferred_composite(&mut backend_state, &render_rx);
             render_background_tick(&backend_state);
 
-            // Update JNI diagnostics snapshot (read-only — never write cache from here)
-            let (sw, sh) = crate::android::command_channel::get_surface_size();
-            let cached_scale = crate::android::command_channel::get_scale();
-            let snapshot = format!(
-                "window_bound={}, surface={}x{}, wl_scale={:.1}, shm_enabled={}",
-                backend_state.native_window.is_some(),
-                sw, sh,
-                cached_scale,
-                backend_state.shm_enabled,
-            );
-            crate::android::command_channel::set_backend_snapshot(snapshot);
-            crate::android::command_channel::set_scroll_sensitivity(backend_state.scroll_sensitivity);
-            crate::android::command_channel::set_physical_size(backend_state.physical_size_mm.0, backend_state.physical_size_mm.1);
-
-            if let Some(server) = wayland_server.as_ref() {
-                let focused = server.runtime.focused_surface.as_ref()
-                    .map(|s| format!("{:?}", s.id()))
-                    .unwrap_or_else(|| "none".to_string());
-                let stats = format!(
-                    "windows={} unmanaged={} focus={} injected={} dispatch={} focus_decision={} cursor={}",
-                    server.runtime.space.elements().count(),
-                    server.runtime.unmanaged_surfaces.len(),
-                    focused,
-                    server.runtime.injected_events,
-                    server.runtime.last_seat_dispatch,
-                    server.runtime.last_focus_decision,
-                    server.runtime.last_cursor_mode
+            // Snapshot/diagnostics at ~2Hz, not every spin: the format!s and
+            // shared-state writes below are pure overhead per iteration.
+            if last_stats_print.elapsed() >= Duration::from_millis(500) {
+                last_stats_print = Instant::now();
+                // Update JNI diagnostics snapshot (read-only — never write cache from here)
+                let (sw, sh) = crate::android::command_channel::get_surface_size();
+                let cached_scale = crate::android::command_channel::get_scale();
+                let snapshot = format!(
+                    "window_bound={}, surface={}x{}, wl_scale={:.1}, shm_enabled={}",
+                    backend_state.native_window.is_some(),
+                    sw, sh,
+                    cached_scale,
+                    backend_state.shm_enabled,
                 );
-                crate::android::command_channel::set_runtime_stats(stats);
+                crate::android::command_channel::set_backend_snapshot(snapshot);
+                crate::android::command_channel::set_scroll_sensitivity(backend_state.scroll_sensitivity);
+                crate::android::command_channel::set_physical_size(backend_state.physical_size_mm.0, backend_state.physical_size_mm.1);
+
+                if let Some(server) = wayland_server.as_ref() {
+                    let focused = server.runtime.focused_surface.as_ref()
+                        .map(|s| format!("{:?}", s.id()))
+                        .unwrap_or_else(|| "none".to_string());
+                    let stats = format!(
+                        "windows={} unmanaged={} focus={} injected={} dispatch={} focus_decision={} cursor={}",
+                        server.runtime.space.elements().count(),
+                        server.runtime.unmanaged_surfaces.len(),
+                        focused,
+                        server.runtime.injected_events,
+                        server.runtime.last_seat_dispatch,
+                        server.runtime.last_focus_decision,
+                        server.runtime.last_cursor_mode
+                    );
+                    crate::android::command_channel::set_runtime_stats(stats);
+                }
             }
 
-            // Smart sleep: yield when clients are rendering, sleep when idle
-            if wayland_server.as_mut().map_or(false, |s| s.connected_client_count() > 0) {
-                std::thread::yield_now();
-            } else {
-                thread::sleep(Duration::from_millis(8));
+            // Frame pacing: cap the loop at the display refresh rate instead
+            // of busy-spinning (yield_now = 100% CPU core). 2ms floor keeps
+            // input latency low; queued commands preserve event order anyway.
+            let period = Duration::from_secs_f32(1.0 / backend_state.refresh_rate.clamp(30.0, 240.0));
+            let elapsed = loop_start.elapsed();
+            if elapsed < period {
+                thread::sleep((period - elapsed).max(Duration::from_millis(2)));
             }
         }
         log::info!("Compositor: runtime loop stopped");

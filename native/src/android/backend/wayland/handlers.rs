@@ -377,7 +377,9 @@ impl CompositorHandler for AndroidSeatRuntime {
             |_, _| Some(self.output.clone()),
         );
 
-        self.render_all();
+        // No direct render_all() here: the paced compositor loop renders
+        // within ~1 frame anyway. Rendering synchronously per commit
+        // duplicated the loop's full render and stalled protocol dispatch.
 
         self.sync_text_input_to_android();
     }
