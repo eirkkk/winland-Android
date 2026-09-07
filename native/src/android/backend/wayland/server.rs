@@ -4,6 +4,8 @@ use std::fs;
 #[cfg(feature = "smithay_android")]
 use std::os::unix::fs::FileTypeExt;
 #[cfg(feature = "smithay_android")]
+use std::os::unix::ffi::OsStrExt;
+#[cfg(feature = "smithay_android")]
 use std::os::unix::net::UnixStream;
 #[cfg(feature = "smithay_android")]
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -258,27 +260,38 @@ impl WaylandServer {
             .map_err(|error| format!("failed to bind {}: {error}", socket_path.display()))?;
 
         log::info!(
-            "--- [Winland-Alpha-Final-V3] --- Wayland socket bound at {:?}. Applying 0666 permissions via libc::chmod loop.",
+            "Wayland socket bound at {:?}. Applying 0666 permissions via fchmodat (no symlink follow).",
             socket_path
         );
 
-        let c_socket_path = std::ffi::CString::new(socket_path.to_string_lossy().as_bytes()).unwrap();
-        let mut success = false;
-
-        for attempt in 1..=5 {
-            std::thread::sleep(std::time::Duration::from_millis(150));
-            unsafe {
-                if libc::chmod(c_socket_path.as_ptr(), 0o666) == 0 {
-                    log::info!("Wayland: Socket permissions set to 0666 successfully on attempt {}", attempt);
-                    success = true;
-                    break;
+        // Single fchmodat with AT_SYMLINK_NOFOLLOW instead of the old
+        // 5x150ms libc::chmod loop: no CString::unwrap panic on NUL paths,
+        // no 750ms stall, and a guest-swapped symlink is refused (ELOOP)
+        // rather than chmodding an arbitrary file through.
+        match std::ffi::CString::new(socket_path.as_os_str().as_bytes()) {
+            Ok(c_socket_path) => {
+                // SAFETY: valid C string, dirfd + flag constants only.
+                let ret = unsafe {
+                    libc::fchmodat(
+                        libc::AT_FDCWD,
+                        c_socket_path.as_ptr(),
+                        0o666,
+                        libc::AT_SYMLINK_NOFOLLOW,
+                    )
+                };
+                if ret == 0 {
+                    log::info!("Wayland: socket permissions set to 0666");
+                } else {
+                    log::warn!(
+                        "Wayland: fchmodat failed for {:?}: {:?}",
+                        socket_path,
+                        std::io::Error::last_os_error()
+                    );
                 }
             }
-            log::warn!("Wayland: chmod attempt {} failed for {:?}", attempt, socket_path);
-        }
-
-        if !success {
-            log::error!("Wayland: FATAL - Failed to set socket permissions after 5 attempts.");
+            Err(_) => {
+                log::error!("Wayland: socket path contains NUL, skipping chmod");
+            }
         }
 
         let socket_is_socket = fs::symlink_metadata(&socket_path)

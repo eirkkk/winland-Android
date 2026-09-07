@@ -2,25 +2,22 @@ use jni::{JNIEnv, objects::{JClass, JObject, JString}};
 use jni::sys::jboolean;
 use crate::android::utils::context::ApplicationContext;
 use std::panic::AssertUnwindSafe;
-use std::ptr;
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::Mutex;
 
-static LAST_INIT_ERROR: AtomicPtr<String> = AtomicPtr::new(ptr::null_mut());
+// Last compositor init error, if any. A Mutex-guarded Option replaces the
+// previous lock-free AtomicPtr, which could use-after-free / double-free
+// under concurrent spawn/stop from JNI threads.
+static LAST_INIT_ERROR: Mutex<Option<String>> = Mutex::new(None);
 
 fn set_last_init_error(message: impl Into<String>) {
-    let old = LAST_INIT_ERROR.swap(
-        Box::into_raw(Box::new(message.into())),
-        Ordering::SeqCst,
-    );
-    if !old.is_null() {
-        unsafe { drop(Box::from_raw(old)); }
+    if let Ok(mut guard) = LAST_INIT_ERROR.lock() {
+        *guard = Some(message.into());
     }
 }
 
 fn clear_last_init_error() {
-    let old = LAST_INIT_ERROR.swap(ptr::null_mut(), Ordering::SeqCst);
-    if !old.is_null() {
-        unsafe { drop(Box::from_raw(old)); }
+    if let Ok(mut guard) = LAST_INIT_ERROR.lock() {
+        *guard = None;
     }
 }
 
@@ -184,12 +181,7 @@ pub extern "system" fn Java_com_winland_server_NativeBridge_releaseWaylandConnec
 }
 
 pub(crate) fn get_latest_error() -> Option<String> {
-    let ptr = LAST_INIT_ERROR.load(Ordering::SeqCst);
-    if ptr.is_null() {
-        None
-    } else {
-        unsafe { Some((*ptr).clone()) }
-    }
+    LAST_INIT_ERROR.lock().ok()?.clone()
 }
 
 /// JNI entry point for setting the X11 socket directory (chroot tmp dir).
@@ -274,8 +266,9 @@ mod tests {
     }
 
     #[test]
-    fn atomic_ptr_starts_null() {
-        assert!(LAST_INIT_ERROR.load(Ordering::SeqCst).is_null());
+    fn error_slot_starts_empty() {
+        clear_last_init_error();
+        assert_eq!(get_latest_error(), None);
     }
 
     #[test]

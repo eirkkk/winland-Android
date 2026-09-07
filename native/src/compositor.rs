@@ -1,12 +1,11 @@
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use std::sync::mpsc;
 use std::path::Path;
 use std::fs;
 use std::os::unix::fs::FileTypeExt;
-use std::ptr;
 
 use crate::android::backend::smithay_backend::{AndroidSmithayState, flush_deferred_composite, render_background_tick, RenderItem};
 use crate::android::backend::wayland::input::{InputRouter, RoutedInputEvent};
@@ -22,7 +21,7 @@ struct CompositorRuntime {
     worker: JoinHandle<()>,
 }
 
-static RUNTIME: AtomicPtr<CompositorRuntime> = AtomicPtr::new(ptr::null_mut());
+static RUNTIME: Mutex<Option<Box<CompositorRuntime>>> = Mutex::new(None);
 
 fn is_wayland_socket_published(socket_dir: &Path, socket_name: &str) -> bool {
     let socket_path = socket_dir.join(socket_name);
@@ -40,13 +39,16 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
     // Always update XKB config for current distro, even if compositor is already running.
     crate::android::backend::wayland::smithay_runtime::configure_xkb(&data_dir, distro_id);
 
-    if !RUNTIME.load(Ordering::SeqCst).is_null() {
-        let runtime_ptr = RUNTIME.load(Ordering::SeqCst);
-        let runtime = unsafe { &*runtime_ptr };
+    // Serialize spawn against stop (and concurrent spawns) with the
+    // runtime lock. The previous lock-free pointer could use-after-free
+    // or double-free when spawn/stop raced on JNI threads.
+    let mut startup_guard = RUNTIME
+        .lock()
+        .map_err(|_| "Compositor: runtime lock poisoned".to_string())?;
+    if let Some(runtime) = startup_guard.as_ref() {
         if runtime.worker.is_finished() {
-            log::warn!("Compositor: thread is dead, clearing stale runtime pointer");
-            let old = RUNTIME.swap(ptr::null_mut(), Ordering::SeqCst);
-            unsafe { drop(Box::from_raw(old)) };
+            log::warn!("Compositor: thread is dead, clearing stale runtime");
+            *startup_guard = None;
         } else {
             log::info!("Compositor: runtime already running (xkb updated for distro={})", distro_id);
             return Ok(());
@@ -460,17 +462,15 @@ pub fn spawn(distro_id: &str) -> Result<(), String> {
     }
 
     log::info!("Compositor: initialized");
-    RUNTIME.store(Box::into_raw(Box::new(CompositorRuntime { running, worker })), Ordering::SeqCst);
+    *startup_guard = Some(Box::new(CompositorRuntime { running, worker }));
     Ok(())
 }
 
 pub fn stop() {
-    let runtime_ptr = RUNTIME.swap(ptr::null_mut(), Ordering::SeqCst);
-    if runtime_ptr.is_null() {
-        return;
-    }
-
-    let runtime = unsafe { Box::from_raw(runtime_ptr) };
+    let runtime = match RUNTIME.lock().ok().and_then(|mut guard| guard.take()) {
+        Some(runtime) => runtime,
+        None => return,
+    };
 
     let (tx, rx) = mpsc::channel();
     crate::android::command_channel::send_command(JniCommand::ShutdownCompositor { response: tx });
@@ -483,85 +483,69 @@ pub fn stop() {
 
 #[cfg(all(test, feature = "smithay_android"))]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
-    use std::ptr;
-    use std::sync::atomic::{AtomicBool, Ordering, AtomicPtr};
     use super::CompositorRuntime;
 
-    // Helper: create a clean AtomicPtr not shared with other tests
-    fn fresh_runtime_ptr() -> AtomicPtr<CompositorRuntime> {
-        AtomicPtr::new(ptr::null_mut())
+    // Helper: a standalone slot with the same type as the global RUNTIME.
+    fn fresh_runtime_slot() -> Mutex<Option<Box<CompositorRuntime>>> {
+        Mutex::new(None)
     }
 
-    #[test]
-    fn starts_null() {
-        let rt = fresh_runtime_ptr();
-        assert!(rt.load(Ordering::SeqCst).is_null());
-    }
-
-    #[test]
-    fn store_and_load() {
-        let rt = fresh_runtime_ptr();
-        let dummy = Box::into_raw(Box::new(CompositorRuntime {
+    fn dummy_runtime() -> Box<CompositorRuntime> {
+        Box::new(CompositorRuntime {
             running: Arc::new(AtomicBool::new(true)),
             worker: thread::spawn(|| {}),
-        }));
+        })
+    }
 
-        rt.store(dummy, Ordering::SeqCst);
-        assert!(!rt.load(Ordering::SeqCst).is_null());
-
-        let taken = rt.swap(ptr::null_mut(), Ordering::SeqCst);
-        assert!(!taken.is_null());
-        assert!(rt.load(Ordering::SeqCst).is_null());
-
-        let recovered = unsafe { Box::from_raw(taken) };
-        recovered.running.store(false, Ordering::Relaxed);
-        let _ = recovered.worker.join();
+    fn shutdown(runtime: Box<CompositorRuntime>) {
+        runtime.running.store(false, Ordering::Relaxed);
+        let _ = runtime.worker.join();
     }
 
     #[test]
-    fn swap_returns_old_value() {
-        let rt = fresh_runtime_ptr();
-
-        let dummy1 = Box::into_raw(Box::new(CompositorRuntime {
-            running: Arc::new(AtomicBool::new(true)),
-            worker: thread::spawn(|| {}),
-        }));
-        rt.store(dummy1, Ordering::SeqCst);
-
-        let old = rt.swap(ptr::null_mut(), Ordering::SeqCst);
-        assert_eq!(old, dummy1);
-
-        let recovered = unsafe { Box::from_raw(old) };
-        recovered.running.store(false, Ordering::Relaxed);
-        let _ = recovered.worker.join();
+    fn starts_empty() {
+        let slot = fresh_runtime_slot();
+        assert!(slot.lock().unwrap().is_none());
     }
 
     #[test]
-    fn double_swap_is_safe() {
-        let rt = fresh_runtime_ptr();
-        assert!(rt.swap(ptr::null_mut(), Ordering::SeqCst).is_null());
-        assert!(rt.swap(ptr::null_mut(), Ordering::SeqCst).is_null());
+    fn store_and_take() {
+        let slot = fresh_runtime_slot();
+        *slot.lock().unwrap() = Some(dummy_runtime());
+        assert!(slot.lock().unwrap().is_some());
+
+        let taken = slot.lock().unwrap().take();
+        assert!(taken.is_some());
+        assert!(slot.lock().unwrap().is_none());
+        shutdown(taken.unwrap());
     }
 
     #[test]
-    fn null_check_after_swap() {
-        let rt = fresh_runtime_ptr();
-        let dummy = Box::into_raw(Box::new(CompositorRuntime {
-            running: Arc::new(AtomicBool::new(true)),
-            worker: thread::spawn(|| {}),
-        }));
+    fn take_on_empty_returns_none() {
+        let slot = fresh_runtime_slot();
+        assert!(slot.lock().unwrap().take().is_none());
+        assert!(slot.lock().unwrap().take().is_none());
+    }
 
-        rt.store(dummy, Ordering::SeqCst);
-        assert!(!rt.load(Ordering::SeqCst).is_null());
+    #[test]
+    fn overwrite_replaces_previous() {
+        let slot = fresh_runtime_slot();
+        *slot.lock().unwrap() = Some(dummy_runtime());
+        let old = slot.lock().unwrap().replace(dummy_runtime());
+        assert!(old.is_some());
+        assert!(slot.lock().unwrap().is_some());
+        shutdown(old.unwrap());
+        shutdown(slot.lock().unwrap().take().unwrap());
+    }
 
-        rt.swap(ptr::null_mut(), Ordering::SeqCst);
-        assert!(rt.load(Ordering::SeqCst).is_null());
-
-        // Clean up
-        let recovered = unsafe { Box::from_raw(dummy) };
-        recovered.running.store(false, Ordering::Relaxed);
-        let _ = recovered.worker.join();
+    #[test]
+    fn take_leaves_slot_empty() {
+        let slot = fresh_runtime_slot();
+        *slot.lock().unwrap() = Some(dummy_runtime());
+        shutdown(slot.lock().unwrap().take().unwrap());
+        assert!(slot.lock().unwrap().is_none());
     }
 }

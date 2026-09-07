@@ -585,7 +585,7 @@ impl AndroidSeatRuntime {
 
         let keyboard = Some(
             seat.add_keyboard(XkbConfig { layout: "us,ara", ..Default::default() }, 200, 25)
-                .expect("failed to add keyboard"),
+                .map_err(|e| format!("failed to add keyboard: {:?}", e))?,
         );
         log::info!("SmithayRuntime: xkb initialized successfully with evdev/pc105/us,ara");
 
@@ -997,12 +997,47 @@ impl AndroidSeatRuntime {
         log::info!("SmithayRuntime: focus cleared");
     }
 
+    /// Hard cap for any single client-driven buffer allocation (64 MiB).
+    /// Client-provided dmabuf/shm geometry is untrusted: without checked
+    /// math + a cap, a malicious/buggy client can trigger OOM or overflow.
+    const MAX_CLIENT_BUFFER_BYTES: usize = 64 * 1024 * 1024;
+
+    /// Checked `offset + stride * height` for client-provided geometry.
+    fn checked_plane_len(offset: usize, stride: usize, height: usize) -> Option<usize> {
+        let len = offset.checked_add(stride.checked_mul(height)?)?;
+        if len > Self::MAX_CLIENT_BUFFER_BYTES || len == 0 {
+            return None;
+        }
+        Some(len)
+    }
+
+    /// Checked `width * height * 4` pixel capacity for client-provided geometry.
+    fn checked_pixel_capacity(width: usize, height: usize) -> Option<usize> {
+        let len = width.checked_mul(height)?.checked_mul(4)?;
+        if len > Self::MAX_CLIENT_BUFFER_BYTES || len == 0 {
+            return None;
+        }
+        Some(len)
+    }
+
     fn shm_slice<'a>(
         ptr: *const u8,
         len: usize,
         info: &smithay::wayland::shm::BufferData,
     ) -> Option<&'a [u8]> {
-        let expected = info.offset as usize + info.stride as usize * info.height as usize;
+        let Some(expected) = Self::checked_plane_len(
+            info.offset as usize,
+            info.stride as usize,
+            info.height as usize,
+        ) else {
+            log::warn!(
+                "SHM buffer geometry rejected (overflow/oversize): offset={} stride={} height={}",
+                info.offset,
+                info.stride,
+                info.height
+            );
+            return None;
+        };
         if len < expected {
             log::warn!(
                 "SHM buffer corrupted: pool_len={} < expected={} (offset={} stride={} height={})",
@@ -1063,7 +1098,16 @@ impl AndroidSeatRuntime {
     }
 
     fn try_read_dmabuf_via_mmap(fd: std::os::raw::c_int, offset: usize, stride: usize, width: usize, height: usize) -> Option<Vec<u8>> {
-        let map_len = offset + stride * height;
+        let Some(map_len) = Self::checked_plane_len(offset, stride, height) else {
+            log::warn!("dmabuf mmap rejected geometry: offset={} stride={} height={}", offset, stride, height);
+            return None;
+        };
+        // Validated above: offset + stride*height and width*height*4 cannot
+        // overflow below, so row arithmetic inside the loop is safe.
+        let Some(pixel_cap) = Self::checked_pixel_capacity(width, height) else {
+            log::warn!("dmabuf mmap rejected pixel dims: {}x{}", width, height);
+            return None;
+        };
         let ptr = unsafe {
             libc::mmap(std::ptr::null_mut(), map_len,
                        libc::PROT_READ, libc::MAP_SHARED, fd, 0)
@@ -1072,12 +1116,13 @@ impl AndroidSeatRuntime {
             log::warn!("dmabuf mmap FAILED fd={} map_len={}", fd, map_len);
             return None;
         }
-        let mut pixels = Vec::with_capacity(width * height * 4);
+        let row_bytes = width * 4;
+        let mut pixels = Vec::with_capacity(pixel_cap);
         unsafe {
             let base = (ptr as *const u8).add(offset);
             for row in 0..height {
                 let slice = std::slice::from_raw_parts(
-                    base.add(row * stride), width * 4);
+                    base.add(row * stride), row_bytes);
                 pixels.extend_from_slice(slice);
             }
             libc::munmap(ptr, map_len);
@@ -1089,7 +1134,16 @@ impl AndroidSeatRuntime {
     }
 
     fn try_read_dmabuf_via_pread(fd: std::os::raw::c_int, offset: usize, stride: usize, width: usize, height: usize) -> Option<Vec<u8>> {
-        let read_len = offset + stride * height;
+        let Some(read_len) = Self::checked_plane_len(offset, stride, height) else {
+            log::warn!("dmabuf pread rejected geometry: offset={} stride={} height={}", offset, stride, height);
+            return None;
+        };
+        // Same proof as the mmap path: validated geometry makes the row
+        // arithmetic below overflow-free.
+        let Some(pixel_cap) = Self::checked_pixel_capacity(width, height) else {
+            log::warn!("dmabuf pread rejected pixel dims: {}x{}", width, height);
+            return None;
+        };
         let mut buf = vec![0u8; read_len];
         let nread = unsafe {
             libc::pread(fd, buf.as_mut_ptr() as *mut libc::c_void, read_len, 0)
@@ -1099,11 +1153,12 @@ impl AndroidSeatRuntime {
             return None;
         }
         let available = nread as usize;
-        let mut pixels = Vec::with_capacity(width * height * 4);
+        let row_bytes = width * 4;
+        let mut pixels = Vec::with_capacity(pixel_cap);
         for row in 0..height {
             let row_off = offset + row * stride;
-            if row_off + width * 4 <= available {
-                pixels.extend_from_slice(&buf[row_off..row_off + width * 4]);
+            if row_off + row_bytes <= available {
+                pixels.extend_from_slice(&buf[row_off..row_off + row_bytes]);
             }
         }
         if pixels.is_empty() {
@@ -1226,10 +1281,24 @@ impl AndroidSeatRuntime {
                         let offset = info.offset as usize;
                         let fmt = format!("{:?}", info.format);
 
-                        let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+                        // i32 dims are client-controlled: convert fallibly and
+                        // cap before any allocation or indexing.
+                        let (width_usize, height_usize) =
+                            match (usize::try_from(width), usize::try_from(height)) {
+                                (Ok(w), Ok(h)) => (w, h),
+                                _ => return,
+                            };
+                        let pixel_cap =
+                            match Self::checked_pixel_capacity(width_usize, height_usize) {
+                                Some(cap) => cap,
+                                None => return,
+                            };
+                        let row_bytes = width_usize * 4;
+
+                        let mut pixels = Vec::with_capacity(pixel_cap);
                         for y in 0..height {
                             let start = offset + (y as usize) * stride;
-                            let end = start + (width as usize) * 4;
+                            let end = start + row_bytes;
                             if end <= slice.len() {
                                 pixels.extend_from_slice(&slice[start..end]);
                             } else {
