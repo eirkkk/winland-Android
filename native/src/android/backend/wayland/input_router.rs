@@ -1,5 +1,7 @@
 use crate::android::backend::wayland::engine_timing;
 #[cfg(feature = "smithay_android")]
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(feature = "smithay_android")]
 use crate::android::backend::wayland::input::{RoutedInputEvent, TouchPoint};
 #[cfg(feature = "smithay_android")]
 use crate::android::backend::wayland::seat::{AndroidSeatRuntime, WinlandInputMode};
@@ -42,6 +44,12 @@ pub use xkbcommon::xkb::{
 };
 
 // ── Input routing and focus management ───────────────────────────────────────
+
+/// Last pointer-clamp bounds already logged (packed w/h). The clamp log
+/// below fires only when the live output size actually changes (e.g.
+/// rotation) — never per mouse-move.
+#[cfg(feature = "smithay_android")]
+static LAST_CLAMP_BOUNDS: AtomicU64 = AtomicU64::new(u64::MAX);
 
 #[cfg(feature = "smithay_android")]
 impl AndroidSeatRuntime {
@@ -329,11 +337,25 @@ impl AndroidSeatRuntime {
         let dx = raw_dx * 1.5 * accel * s;
         let dy = raw_dy * 1.5 * accel * s;
 
-        // Clamp to logical output bounds (physical / scale).
+        // Clamp to the LIVE output mode, never a stored copy: pointer bounds
+        // must always be the full screen. Reserved insets belong to window
+        // placement only and must never shrink pointer travel.
         let scale = self.output_scale();
-        let (phys_w, phys_h) = self.screen_size;
+        let (phys_w, phys_h) = self
+            .output
+            .current_mode()
+            .map(|m| (m.size.w, m.size.h))
+            .unwrap_or(self.screen_size);
         let logical_w = phys_w as f64 / scale;
         let logical_h = phys_h as f64 / scale;
+        // One-shot evidence log: fires only when bounds actually change.
+        let key = ((phys_w as u64) << 32) | (phys_h as u64 & 0xffff_ffff);
+        if LAST_CLAMP_BOUNDS.swap(key, Ordering::Relaxed) != key {
+            log::info!(
+                "PointerClamp: live_mode={}x{} scale={} bounds=({:.0},{:.0})",
+                phys_w, phys_h, scale, logical_w, logical_h
+            );
+        }
         let dx_logical = dx / scale as f32;
         let dy_logical = dy / scale as f32;
         let current = p.current_location();
@@ -870,11 +892,25 @@ impl AndroidSeatRuntime {
         }
         let p = self.pointer.clone();
 
-        // Clamp to logical output bounds (physical / scale).
+        // Clamp to the LIVE output mode, never a stored copy: pointer bounds
+        // must always be the full screen. Reserved insets belong to window
+        // placement only and must never shrink pointer travel.
         let scale = self.output_scale();
-        let (phys_w, phys_h) = self.screen_size;
+        let (phys_w, phys_h) = self
+            .output
+            .current_mode()
+            .map(|m| (m.size.w, m.size.h))
+            .unwrap_or(self.screen_size);
         let logical_w = phys_w as f64 / scale;
         let logical_h = phys_h as f64 / scale;
+        // One-shot evidence log: fires only when bounds actually change.
+        let key = ((phys_w as u64) << 32) | (phys_h as u64 & 0xffff_ffff);
+        if LAST_CLAMP_BOUNDS.swap(key, Ordering::Relaxed) != key {
+            log::info!(
+                "PointerClamp: live_mode={}x{} scale={} bounds=({:.0},{:.0})",
+                phys_w, phys_h, scale, logical_w, logical_h
+            );
+        }
         let current = p.current_location();
         let new_location = Point::<f64, Logical>::from((
             (current.x + dx as f64 / scale).clamp(0.0, logical_w),
