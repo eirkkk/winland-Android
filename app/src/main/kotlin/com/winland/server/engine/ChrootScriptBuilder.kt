@@ -659,6 +659,10 @@ CHROOT_EOF
                 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
                 /usr/bin/grep -q "^aid_inet:" /etc/group || /usr/sbin/groupadd -g 3003 aid_inet || true
                 /usr/bin/id _apt >/dev/null 2>&1 && /usr/sbin/usermod -G nogroup -g aid_inet _apt || true
+                # Map inherited Android supplementary GIDs (e.g. 9997=everybody
+                # plus install-specific ones) so `groups`/`id` stop warning
+                # "cannot find name for group ID". Idempotent: skips existing.
+                /usr/bin/id -G 2>/dev/null | /usr/bin/tr ' ' '\n' | /usr/bin/xargs -I GID /usr/bin/sh -c '/usr/bin/getent group GID >/dev/null 2>&1 || echo android_gid_GID:x:GID: >> /etc/group'
 PROOT_EOF
 
             # 4. Execution of distro-specific setup script
@@ -834,10 +838,25 @@ PULSE_EOF
                 export XKB_DEFAULT_LAYOUT=us,ara
                 export XKB_DEFAULT_OPTIONS=grp:shift_caps_toggle,grp_led:scroll
                 export MOZ_ENABLE_WAYLAND=1
+                # Firefox under proot: no real namespaces/seccomp, so the
+                # sandbox and the socket process break networking entirely.
+                # Disabling them restores connectivity (apt/wget unaffected).
+                export MOZ_DISABLE_SANDBOX=1
+                export MOZ_DISABLE_CONTENT_SANDBOX=1
+                export MOZ_DISABLE_GMP_SANDBOX=1
+                export MOZ_DISABLE_RDD_SANDBOX=1
+                export MOZ_DISABLE_SOCKET_PROCESS=1
+                export no_proxy=localhost,127.0.0.1
+                export NO_PROXY=localhost,127.0.0.1
                 export _JAVA_AWT_WM_NONREPARENTING=1
                 export GALLIUM_DRIVER=llvmpipe
                 export WLR_RENDERER=pixman
                 export LIBGL_ALWAYS_SOFTWARE=1
+
+                # Silence "groups: cannot find name for group ID" for Android
+                # supplementary GIDs inherited by proot (idempotent, runs at
+                # every boot so already-installed systems are covered too).
+                /usr/bin/id -G 2>/dev/null | /usr/bin/tr ' ' '\n' | /usr/bin/xargs -I GID /usr/bin/sh -c '/usr/bin/getent group GID >/dev/null 2>&1 || echo android_gid_GID:x:GID: >> /etc/group'
 
                 log_runtime_guest 'RUN: launching XFCE desktop session (proot, software rendering)'
 
@@ -857,13 +876,26 @@ CHROOT_EOF
             #!/system/bin/sh
             # proot sessions share the host PID namespace, so plain pkill
             # from the app UID is enough. No umount needed (no real mounts).
-            pkill -f startxfce4 2>/dev/null || true
-            pkill -f xfce4-session 2>/dev/null || true
-            pkill -f labwc 2>/dev/null || true
-            pkill -f pulseaudio 2>/dev/null || true
-            pkill -f dbus-daemon 2>/dev/null || true
-            pkill -f Xwayland 2>/dev/null || true
+            # Tolerant by design: always exits 0 (even with nothing to kill)
+            # so Restart never aborts on "failed to stop before restart".
+            PKILL_BIN=$(command -v pkill 2>/dev/null || echo /system/bin/pkill)
+            PGREP_BIN=$(command -v pgrep 2>/dev/null || echo /system/bin/pgrep)
+            stop_pattern() {
+                pat="$1"
+                "${'$'}PKILL_BIN" -f "${'$'}pat" 2>/dev/null || true
+                sleep 1
+                if "${'$'}PGREP_BIN" -f "${'$'}pat" >/dev/null 2>&1; then
+                    "${'$'}PKILL_BIN" -9 -f "${'$'}pat" 2>/dev/null || true
+                fi
+            }
+            stop_pattern startxfce4
+            stop_pattern xfce4-session
+            stop_pattern labwc
+            stop_pattern Xwayland
+            stop_pattern pulseaudio
+            stop_pattern dbus-daemon
             echo "proot session processes signalled"
+            exit 0
         """.trimIndent()
     }
 

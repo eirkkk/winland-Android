@@ -549,10 +549,16 @@ object ChrootInstaller {
     }
 
     suspend fun restartChroot(context: Context, distroId: String): Result<Unit> {
-        _logFlow.tryEmit("INFO: restarting rootful chroot session...")
+        val proot = ExecutionModeManager.isProot(context)
+        _logFlow.tryEmit(if (proot) "INFO: restarting rootless (proot) session..." else "INFO: restarting rootful chroot session...")
         val stop = stopChroot(context, distroId)
-        if (stop.isFailure) {
+        if (stop.isFailure && !proot) {
             return Result.failure(stop.exceptionOrNull() ?: IllegalStateException("failed to stop before restart"))
+        }
+        if (stop.isFailure) {
+            // Proot has no mounts/locks to release; a failed stop (e.g.
+            // nothing running yet) must not block the restart.
+            _logFlow.tryEmit("WARN: proot stop reported failure (${stop.exceptionOrNull()?.message}); continuing restart anyway")
         }
         return startChroot(context, distroId, context.resources.displayMetrics.density)
     }
