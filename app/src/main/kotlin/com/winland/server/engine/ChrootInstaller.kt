@@ -6,6 +6,7 @@ import android.util.Log
 import com.winland.server.utils.getUnifiedFilesDir
 import com.winland.server.utils.getUnifiedRootfsDir
 import com.winland.server.utils.getUnifiedTmpDir
+import com.winland.server.utils.RootUtils
 import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -473,6 +474,34 @@ object ChrootInstaller {
             _logFlow.tryEmit("ERROR: ${error.message}")
             isBootingOrRunning.set(false)
             return Result.failure(error)
+        }
+
+        // --- Cross-mode stale session cleanup ---
+        // Switching execution modes (or restarting the app) never stops the
+        // previous session: a lingering desktop fights the new boot over /tmp
+        // sockets (pulseaudio `native`, fifos, XDG links) and fails the boot.
+        // Kill leftovers from BOTH modes, best-effort:
+        // - direct runner (app UID) kills proot-mode leftovers,
+        // - root runner (su) kills root-mode leftovers (app UID cannot
+        //   signal uid-0 processes, so both runners are needed; skipped
+        //   entirely when no root is available).
+        _logFlow.tryEmit("INFO: cleaning stale session processes (both modes)...")
+        val killScript = ChrootScriptBuilder.buildProotStopScript(filesDir, rootfsDir)
+        runCatching {
+            executeDirectCommand(
+                command = killScript,
+                timeoutMinutes = 2,
+                operation = "preBootKillDirect"
+            )
+        }
+        if (RootUtils.isRootAvailable()) {
+            runCatching {
+                executeRootCommand(
+                    command = killScript,
+                    timeoutMinutes = 2,
+                    operation = "preBootKillRoot"
+                )
+            }
         }
 
         val bootScript = if (ExecutionModeManager.isProot(context)) {

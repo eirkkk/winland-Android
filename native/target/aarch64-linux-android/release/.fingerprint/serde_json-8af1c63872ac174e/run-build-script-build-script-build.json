@@ -1,0 +1,1 @@
+{"rustc":9796743202043143334,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[8578586876803397814,"build_script_build",false,13962578389172085176]],"local":[{"RerunIfChanged":{"output":"aarch64-linux-android/release/build/serde_json-8af1c63872ac174e/output","paths":["build.rs"]}}],"rustflags":[],"config":0,"compile_kind":0}

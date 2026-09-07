@@ -1,0 +1,12 @@
+/root/winland-Android/native/target/aarch64-linux-android/release/deps/uniffi_meta-3d71a2272ec584ea.d: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/lib.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/ffi_names.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/group.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/reader.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/types.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/metadata.rs
+
+/root/winland-Android/native/target/aarch64-linux-android/release/deps/libuniffi_meta-3d71a2272ec584ea.rlib: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/lib.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/ffi_names.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/group.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/reader.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/types.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/metadata.rs
+
+/root/winland-Android/native/target/aarch64-linux-android/release/deps/libuniffi_meta-3d71a2272ec584ea.rmeta: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/lib.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/ffi_names.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/group.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/reader.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/types.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/metadata.rs
+
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/lib.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/ffi_names.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/group.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/reader.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/types.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uniffi_meta-0.31.2/src/metadata.rs:

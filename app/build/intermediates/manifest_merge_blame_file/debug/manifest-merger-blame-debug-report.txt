@@ -1,0 +1,270 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.winland.server"
+4    android:versionCode="1"
+5    android:versionName="1.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="26"
+9        android:targetSdkVersion="34" />
+10
+11    <uses-permission android:name="android.permission.INTERNET" />
+11-->/root/winland-Android/app/src/main/AndroidManifest.xml:5:5-67
+11-->/root/winland-Android/app/src/main/AndroidManifest.xml:5:22-64
+12    <uses-permission android:name="android.permission.WAKE_LOCK" />
+12-->/root/winland-Android/app/src/main/AndroidManifest.xml:6:5-68
+12-->/root/winland-Android/app/src/main/AndroidManifest.xml:6:22-65
+13    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+13-->/root/winland-Android/app/src/main/AndroidManifest.xml:7:5-77
+13-->/root/winland-Android/app/src/main/AndroidManifest.xml:7:22-74
+14    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+14-->/root/winland-Android/app/src/main/AndroidManifest.xml:8:5-89
+14-->/root/winland-Android/app/src/main/AndroidManifest.xml:8:22-86
+15    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+15-->/root/winland-Android/app/src/main/AndroidManifest.xml:9:5-94
+15-->/root/winland-Android/app/src/main/AndroidManifest.xml:9:22-91
+16    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+16-->/root/winland-Android/app/src/main/AndroidManifest.xml:10:5-95
+16-->/root/winland-Android/app/src/main/AndroidManifest.xml:10:22-92
+17    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+17-->/root/winland-Android/app/src/main/AndroidManifest.xml:11:5-77
+17-->/root/winland-Android/app/src/main/AndroidManifest.xml:11:22-74
+18    <uses-permission android:name="android.permission.CAMERA" />
+18-->/root/winland-Android/app/src/main/AndroidManifest.xml:12:5-65
+18-->/root/winland-Android/app/src/main/AndroidManifest.xml:12:22-62
+19    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+19-->/root/winland-Android/app/src/main/AndroidManifest.xml:13:5-71
+19-->/root/winland-Android/app/src/main/AndroidManifest.xml:13:22-68
+20
+21    <uses-feature
+21-->/root/winland-Android/app/src/main/AndroidManifest.xml:14:5-85
+22        android:name="android.hardware.camera"
+22-->/root/winland-Android/app/src/main/AndroidManifest.xml:14:19-57
+23        android:required="false" />
+23-->/root/winland-Android/app/src/main/AndroidManifest.xml:14:58-82
+24
+25    <uses-permission
+25-->/root/winland-Android/app/src/main/AndroidManifest.xml:15:5-107
+26        android:name="android.permission.READ_EXTERNAL_STORAGE"
+26-->/root/winland-Android/app/src/main/AndroidManifest.xml:15:22-77
+27        android:maxSdkVersion="32" />
+27-->/root/winland-Android/app/src/main/AndroidManifest.xml:15:78-104
+28    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+28-->/root/winland-Android/app/src/main/AndroidManifest.xml:16:5-81
+28-->/root/winland-Android/app/src/main/AndroidManifest.xml:16:22-78
+29
+30    <permission
+30-->[androidx.core:core:1.12.0] /root/.gradle/caches/8.8/transforms/ff7d307cc3b372875ff36c0535fb2538/transformed/core-1.12.0/AndroidManifest.xml:22:5-24:47
+31        android:name="com.winland.server.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+31-->[androidx.core:core:1.12.0] /root/.gradle/caches/8.8/transforms/ff7d307cc3b372875ff36c0535fb2538/transformed/core-1.12.0/AndroidManifest.xml:23:9-81
+32        android:protectionLevel="signature" />
+32-->[androidx.core:core:1.12.0] /root/.gradle/caches/8.8/transforms/ff7d307cc3b372875ff36c0535fb2538/transformed/core-1.12.0/AndroidManifest.xml:24:9-44
+33
+34    <uses-permission android:name="com.winland.server.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+34-->[androidx.core:core:1.12.0] /root/.gradle/caches/8.8/transforms/ff7d307cc3b372875ff36c0535fb2538/transformed/core-1.12.0/AndroidManifest.xml:26:5-97
+34-->[androidx.core:core:1.12.0] /root/.gradle/caches/8.8/transforms/ff7d307cc3b372875ff36c0535fb2538/transformed/core-1.12.0/AndroidManifest.xml:26:22-94
+35
+36    <application
+36-->/root/winland-Android/app/src/main/AndroidManifest.xml:19:5-81:19
+37        android:name="com.winland.server.WinlandApplication"
+37-->/root/winland-Android/app/src/main/AndroidManifest.xml:20:9-43
+38        android:allowBackup="true"
+38-->/root/winland-Android/app/src/main/AndroidManifest.xml:21:9-35
+39        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+39-->[androidx.core:core:1.12.0] /root/.gradle/caches/8.8/transforms/ff7d307cc3b372875ff36c0535fb2538/transformed/core-1.12.0/AndroidManifest.xml:28:18-86
+40        android:dataExtractionRules="@xml/data_extraction_rules"
+40-->/root/winland-Android/app/src/main/AndroidManifest.xml:22:9-65
+41        android:debuggable="true"
+42        android:extractNativeLibs="true"
+42-->/root/winland-Android/app/src/main/AndroidManifest.xml:29:9-41
+43        android:fullBackupContent="@xml/backup_rules"
+43-->/root/winland-Android/app/src/main/AndroidManifest.xml:23:9-54
+44        android:icon="@mipmap/ic_launcher"
+44-->/root/winland-Android/app/src/main/AndroidManifest.xml:24:9-43
+45        android:label="@string/app_name"
+45-->/root/winland-Android/app/src/main/AndroidManifest.xml:25:9-41
+46        android:roundIcon="@mipmap/ic_launcher_round"
+46-->/root/winland-Android/app/src/main/AndroidManifest.xml:26:9-54
+47        android:supportsRtl="true"
+47-->/root/winland-Android/app/src/main/AndroidManifest.xml:27:9-35
+48        android:theme="@style/Theme.WinlandServer" >
+48-->/root/winland-Android/app/src/main/AndroidManifest.xml:28:9-51
+49        <activity
+49-->/root/winland-Android/app/src/main/AndroidManifest.xml:32:9-42:20
+50            android:name="com.winland.server.MainActivity"
+50-->/root/winland-Android/app/src/main/AndroidManifest.xml:33:13-41
+51            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|density|smallestScreenSize|layoutDirection|fontScale"
+51-->/root/winland-Android/app/src/main/AndroidManifest.xml:35:13-156
+52            android:exported="true"
+52-->/root/winland-Android/app/src/main/AndroidManifest.xml:34:13-36
+53            android:theme="@style/Theme.WinlandServer"
+53-->/root/winland-Android/app/src/main/AndroidManifest.xml:37:13-55
+54            android:windowSoftInputMode="adjustNothing" >
+54-->/root/winland-Android/app/src/main/AndroidManifest.xml:36:13-56
+55            <intent-filter>
+55-->/root/winland-Android/app/src/main/AndroidManifest.xml:38:13-41:29
+56                <action android:name="android.intent.action.MAIN" />
+56-->/root/winland-Android/app/src/main/AndroidManifest.xml:39:17-69
+56-->/root/winland-Android/app/src/main/AndroidManifest.xml:39:25-66
+57
+58                <category android:name="android.intent.category.LAUNCHER" />
+58-->/root/winland-Android/app/src/main/AndroidManifest.xml:40:17-77
+58-->/root/winland-Android/app/src/main/AndroidManifest.xml:40:27-74
+59            </intent-filter>
+60        </activity>
+61        <activity
+61-->/root/winland-Android/app/src/main/AndroidManifest.xml:44:9-49:58
+62            android:name="com.winland.server.DisplayActivity"
+62-->/root/winland-Android/app/src/main/AndroidManifest.xml:45:13-44
+63            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode"
+63-->/root/winland-Android/app/src/main/AndroidManifest.xml:47:13-103
+64            android:exported="false"
+64-->/root/winland-Android/app/src/main/AndroidManifest.xml:46:13-37
+65            android:screenOrientation="fullUser"
+65-->/root/winland-Android/app/src/main/AndroidManifest.xml:48:13-49
+66            android:theme="@style/Theme.WinlandServer" />
+66-->/root/winland-Android/app/src/main/AndroidManifest.xml:49:13-55
+67        <activity
+67-->/root/winland-Android/app/src/main/AndroidManifest.xml:51:9-57:58
+68            android:name="com.winland.server.TerminalActivity"
+68-->/root/winland-Android/app/src/main/AndroidManifest.xml:52:13-45
+69            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|screenSize|smallestScreenSize|density|layoutDirection"
+69-->/root/winland-Android/app/src/main/AndroidManifest.xml:55:13-194
+70            android:exported="false"
+70-->/root/winland-Android/app/src/main/AndroidManifest.xml:53:13-37
+71            android:launchMode="singleTop"
+71-->/root/winland-Android/app/src/main/AndroidManifest.xml:54:13-43
+72            android:screenOrientation="fullUser"
+72-->/root/winland-Android/app/src/main/AndroidManifest.xml:56:13-49
+73            android:theme="@style/Theme.WinlandServer" />
+73-->/root/winland-Android/app/src/main/AndroidManifest.xml:57:13-55
+74
+75        <!--
+76             CleanupReceiver: unmounts chroot bind-mounts on device shutdown/reboot
+77             to prevent kernel mount leaks affecting /sdcard and other paths.
+78        -->
+79        <receiver
+79-->/root/winland-Android/app/src/main/AndroidManifest.xml:61:9-68:20
+80            android:name="com.winland.server.CleanupReceiver"
+80-->/root/winland-Android/app/src/main/AndroidManifest.xml:62:13-44
+81            android:exported="false" >
+81-->/root/winland-Android/app/src/main/AndroidManifest.xml:63:13-37
+82            <intent-filter>
+82-->/root/winland-Android/app/src/main/AndroidManifest.xml:64:13-67:29
+83                <action android:name="android.intent.action.ACTION_SHUTDOWN" />
+83-->/root/winland-Android/app/src/main/AndroidManifest.xml:65:17-80
+83-->/root/winland-Android/app/src/main/AndroidManifest.xml:65:25-77
+84                <action android:name="android.intent.action.REBOOT" />
+84-->/root/winland-Android/app/src/main/AndroidManifest.xml:66:17-71
+84-->/root/winland-Android/app/src/main/AndroidManifest.xml:66:25-68
+85            </intent-filter>
+86        </receiver>
+87
+88        <service
+88-->/root/winland-Android/app/src/main/AndroidManifest.xml:70:9-79:19
+89            android:name="com.winland.server.WinlandService"
+89-->/root/winland-Android/app/src/main/AndroidManifest.xml:71:13-43
+90            android:enabled="true"
+90-->/root/winland-Android/app/src/main/AndroidManifest.xml:72:13-35
+91            android:exported="false"
+91-->/root/winland-Android/app/src/main/AndroidManifest.xml:73:13-37
+92            android:foregroundServiceType="specialUse" >
+92-->/root/winland-Android/app/src/main/AndroidManifest.xml:74:13-55
+93        </service>
+94        <service
+94-->[androidx.camera:camera-camera2:1.3.1] /root/.gradle/caches/8.8/transforms/04f902d7228b31e96493be6c0e2cc862/transformed/camera-camera2-1.3.1/AndroidManifest.xml:24:9-33:19
+95            android:name="androidx.camera.core.impl.MetadataHolderService"
+95-->[androidx.camera:camera-camera2:1.3.1] /root/.gradle/caches/8.8/transforms/04f902d7228b31e96493be6c0e2cc862/transformed/camera-camera2-1.3.1/AndroidManifest.xml:25:13-75
+96            android:enabled="false"
+96-->[androidx.camera:camera-camera2:1.3.1] /root/.gradle/caches/8.8/transforms/04f902d7228b31e96493be6c0e2cc862/transformed/camera-camera2-1.3.1/AndroidManifest.xml:26:13-36
+97            android:exported="false" >
+97-->[androidx.camera:camera-camera2:1.3.1] /root/.gradle/caches/8.8/transforms/04f902d7228b31e96493be6c0e2cc862/transformed/camera-camera2-1.3.1/AndroidManifest.xml:27:13-37
+98            <meta-data
+98-->[androidx.camera:camera-camera2:1.3.1] /root/.gradle/caches/8.8/transforms/04f902d7228b31e96493be6c0e2cc862/transformed/camera-camera2-1.3.1/AndroidManifest.xml:30:13-32:89
+99                android:name="androidx.camera.core.impl.MetadataHolderService.DEFAULT_CONFIG_PROVIDER"
+99-->[androidx.camera:camera-camera2:1.3.1] /root/.gradle/caches/8.8/transforms/04f902d7228b31e96493be6c0e2cc862/transformed/camera-camera2-1.3.1/AndroidManifest.xml:31:17-103
+100                android:value="androidx.camera.camera2.Camera2Config$DefaultProvider" />
+100-->[androidx.camera:camera-camera2:1.3.1] /root/.gradle/caches/8.8/transforms/04f902d7228b31e96493be6c0e2cc862/transformed/camera-camera2-1.3.1/AndroidManifest.xml:32:17-86
+101        </service>
+102
+103        <activity
+103-->[androidx.compose.ui:ui-tooling-android:1.6.1] /root/.gradle/caches/8.8/transforms/48aa7887dc669db7a62b30d512361634/transformed/ui-tooling-release/AndroidManifest.xml:23:9-25:39
+104            android:name="androidx.compose.ui.tooling.PreviewActivity"
+104-->[androidx.compose.ui:ui-tooling-android:1.6.1] /root/.gradle/caches/8.8/transforms/48aa7887dc669db7a62b30d512361634/transformed/ui-tooling-release/AndroidManifest.xml:24:13-71
+105            android:exported="true" />
+105-->[androidx.compose.ui:ui-tooling-android:1.6.1] /root/.gradle/caches/8.8/transforms/48aa7887dc669db7a62b30d512361634/transformed/ui-tooling-release/AndroidManifest.xml:25:13-36
+106        <activity
+106-->[androidx.compose.ui:ui-test-manifest:1.6.1] /root/.gradle/caches/8.8/transforms/91d42e2ac90492790f309ec9143da982/transformed/ui-test-manifest-1.6.1/AndroidManifest.xml:23:9-25:39
+107            android:name="androidx.activity.ComponentActivity"
+107-->[androidx.compose.ui:ui-test-manifest:1.6.1] /root/.gradle/caches/8.8/transforms/91d42e2ac90492790f309ec9143da982/transformed/ui-test-manifest-1.6.1/AndroidManifest.xml:24:13-63
+108            android:exported="true" />
+108-->[androidx.compose.ui:ui-test-manifest:1.6.1] /root/.gradle/caches/8.8/transforms/91d42e2ac90492790f309ec9143da982/transformed/ui-test-manifest-1.6.1/AndroidManifest.xml:25:13-36
+109
+110        <provider
+110-->[androidx.emoji2:emoji2:1.3.0] /root/.gradle/caches/8.8/transforms/40ccc9290a85fc09c49367880cd8c19a/transformed/emoji2-1.3.0/AndroidManifest.xml:24:9-32:20
+111            android:name="androidx.startup.InitializationProvider"
+111-->[androidx.emoji2:emoji2:1.3.0] /root/.gradle/caches/8.8/transforms/40ccc9290a85fc09c49367880cd8c19a/transformed/emoji2-1.3.0/AndroidManifest.xml:25:13-67
+112            android:authorities="com.winland.server.androidx-startup"
+112-->[androidx.emoji2:emoji2:1.3.0] /root/.gradle/caches/8.8/transforms/40ccc9290a85fc09c49367880cd8c19a/transformed/emoji2-1.3.0/AndroidManifest.xml:26:13-68
+113            android:exported="false" >
+113-->[androidx.emoji2:emoji2:1.3.0] /root/.gradle/caches/8.8/transforms/40ccc9290a85fc09c49367880cd8c19a/transformed/emoji2-1.3.0/AndroidManifest.xml:27:13-37
+114            <meta-data
+114-->[androidx.emoji2:emoji2:1.3.0] /root/.gradle/caches/8.8/transforms/40ccc9290a85fc09c49367880cd8c19a/transformed/emoji2-1.3.0/AndroidManifest.xml:29:13-31:52
+115                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+115-->[androidx.emoji2:emoji2:1.3.0] /root/.gradle/caches/8.8/transforms/40ccc9290a85fc09c49367880cd8c19a/transformed/emoji2-1.3.0/AndroidManifest.xml:30:17-75
+116                android:value="androidx.startup" />
+116-->[androidx.emoji2:emoji2:1.3.0] /root/.gradle/caches/8.8/transforms/40ccc9290a85fc09c49367880cd8c19a/transformed/emoji2-1.3.0/AndroidManifest.xml:31:17-49
+117            <meta-data
+117-->[androidx.lifecycle:lifecycle-process:2.7.0] /root/.gradle/caches/8.8/transforms/8a8a7c4180a718678c45688ddd3cf19d/transformed/lifecycle-process-2.7.0/AndroidManifest.xml:29:13-31:52
+118                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+118-->[androidx.lifecycle:lifecycle-process:2.7.0] /root/.gradle/caches/8.8/transforms/8a8a7c4180a718678c45688ddd3cf19d/transformed/lifecycle-process-2.7.0/AndroidManifest.xml:30:17-78
+119                android:value="androidx.startup" />
+119-->[androidx.lifecycle:lifecycle-process:2.7.0] /root/.gradle/caches/8.8/transforms/8a8a7c4180a718678c45688ddd3cf19d/transformed/lifecycle-process-2.7.0/AndroidManifest.xml:31:17-49
+120            <meta-data
+120-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:29:13-31:52
+121                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+121-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:30:17-85
+122                android:value="androidx.startup" />
+122-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:31:17-49
+123        </provider>
+124
+125        <receiver
+125-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:34:9-52:20
+126            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+126-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:35:13-76
+127            android:directBootAware="false"
+127-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:36:13-44
+128            android:enabled="true"
+128-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:37:13-35
+129            android:exported="true"
+129-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:38:13-36
+130            android:permission="android.permission.DUMP" >
+130-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:39:13-57
+131            <intent-filter>
+131-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:40:13-42:29
+132                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+132-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:41:17-91
+132-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:41:25-88
+133            </intent-filter>
+134            <intent-filter>
+134-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:43:13-45:29
+135                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+135-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:44:17-85
+135-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:44:25-82
+136            </intent-filter>
+137            <intent-filter>
+137-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:46:13-48:29
+138                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+138-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:47:17-88
+138-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:47:25-85
+139            </intent-filter>
+140            <intent-filter>
+140-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:49:13-51:29
+141                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+141-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:50:17-95
+141-->[androidx.profileinstaller:profileinstaller:1.3.0] /root/.gradle/caches/8.8/transforms/2b7af5686ea636d108eab8ffdc2022e2/transformed/profileinstaller-1.3.0/AndroidManifest.xml:50:25-92
+142            </intent-filter>
+143        </receiver>
+144    </application>
+145
+146</manifest>
