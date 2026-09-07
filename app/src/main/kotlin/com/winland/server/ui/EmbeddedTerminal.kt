@@ -48,15 +48,35 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
     var barCtrlActive: Boolean = false
     var barAltActive: Boolean = false
     var onBarStateChanged: ((sessionId: String, ctrl: Boolean, alt: Boolean) -> Unit)? = null
+    /** Set by Compose before createView/update so colors follow the app theme. Null = follow system. */
+    var forceDarkTheme: Boolean? = null
+
+    /** Terminal background for the given theme (kept in sync with applyColorScheme). */
+    fun backgroundColor(dark: Boolean = resolveDarkTheme()): Int =
+        if (dark) 0xFF282C34.toInt() else 0xFFFAFAFC.toInt()
+
+    private fun resolveDarkTheme(): Boolean {
+        forceDarkTheme?.let { return it }
+        val mask = context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        return mask == android.content.res.Configuration.UI_MODE_NIGHT_YES
+    }
+
+    /** Re-apply palette + view background (e.g. after a theme change). */
+    fun refreshTheme(dark: Boolean) {
+        forceDarkTheme = dark
+        applyColorScheme(dark)
+        terminalView?.setBackgroundColor(backgroundColor(dark))
+    }
 
     @android.annotation.SuppressLint("ClickableViewAccessibility")
     fun createView(): TerminalView {
-        applyColorScheme()
+        val dark = resolveDarkTheme()
+        applyColorScheme(dark)
         val view = TerminalView(context, null)
         view.setTerminalViewClient(this)
         view.setTextSize(currentFontSize)
         view.keepScreenOn = true
-        view.setBackgroundColor(0xFF282C34.toInt())
+        view.setBackgroundColor(backgroundColor(dark))
         view.isFocusable = true
         view.isFocusableInTouchMode = true
         view.setTypeface(android.graphics.Typeface.MONOSPACE)
@@ -78,27 +98,49 @@ class EmbeddedTerminal(private val context: Context) : TerminalSessionClient, Te
         return view
     }
 
-    private fun applyColorScheme() {
+    private fun applyColorScheme(dark: Boolean = resolveDarkTheme()) {
         val props = java.util.Properties()
-        props["foreground"] = "#ABB2BF"
-        props["background"] = "#282C34"
-        props["cursor"] = "#528BFF"
-        props["color0"] = "#282C34"
-        props["color1"] = "#E06C75"
-        props["color2"] = "#98C379"
-        props["color3"] = "#E5C07B"
-        props["color4"] = "#61AFEF"
-        props["color5"] = "#C678DD"
-        props["color6"] = "#56B6C2"
-        props["color7"] = "#ABB2BF"
-        props["color8"] = "#5C6370"
-        props["color9"] = "#E06C75"
-        props["color10"] = "#98C379"
-        props["color11"] = "#E5C07B"
-        props["color12"] = "#61AFEF"
-        props["color13"] = "#C678DD"
-        props["color14"] = "#56B6C2"
-        props["color15"] = "#FFFFFF"
+        if (dark) {
+            props["foreground"] = "#ABB2BF"
+            props["background"] = "#282C34"
+            props["cursor"] = "#528BFF"
+            props["color0"] = "#282C34"
+            props["color1"] = "#E06C75"
+            props["color2"] = "#98C379"
+            props["color3"] = "#E5C07B"
+            props["color4"] = "#61AFEF"
+            props["color5"] = "#C678DD"
+            props["color6"] = "#56B6C2"
+            props["color7"] = "#ABB2BF"
+            props["color8"] = "#5C6370"
+            props["color9"] = "#E06C75"
+            props["color10"] = "#98C379"
+            props["color11"] = "#E5C07B"
+            props["color12"] = "#61AFEF"
+            props["color13"] = "#C678DD"
+            props["color14"] = "#56B6C2"
+            props["color15"] = "#FFFFFF"
+        } else {
+            props["foreground"] = "#24272E"
+            props["background"] = "#FAFAFC"
+            props["cursor"] = "#2F5DA8"
+            props["color0"] = "#2B2E36"
+            props["color1"] = "#C03535"
+            props["color2"] = "#2E7D32"
+            props["color3"] = "#9A6B1A"
+            props["color4"] = "#2F5DA8"
+            props["color5"] = "#8A3FA0"
+            props["color6"] = "#1E7E8C"
+            props["color7"] = "#5A5E66"
+            props["color8"] = "#8A8E96"
+            props["color9"] = "#D84848"
+            props["color10"] = "#43A047"
+            props["color11"] = "#B98A1E"
+            props["color12"] = "#4A86D4"
+            props["color13"] = "#A35AB5"
+            props["color14"] = "#35A3B5"
+            props["color15"] = "#24272E"
+        }
         com.termux.terminal.TerminalColors.COLOR_SCHEME.updateWith(props)
     }
 

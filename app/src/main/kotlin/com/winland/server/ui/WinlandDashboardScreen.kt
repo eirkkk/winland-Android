@@ -3,6 +3,7 @@ package com.winland.server.ui
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -61,6 +62,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -154,6 +158,16 @@ fun WinlandDashboardScreen(
     val logsPaused by viewModel.logsPaused.collectAsState()
     val logSearchQuery by viewModel.logSearchQuery.collectAsState()
     val displayedLogs by viewModel.filteredLogs.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        viewModel.messages.collect { (message, isError) ->
+            snackbarHostState.showSnackbar(
+                message = message,
+                withDismissAction = true,
+                duration = if (isError) SnackbarDuration.Long else SnackbarDuration.Short
+            )
+        }
+    }
     LaunchedEffect(distros) {
         viewModel.ensureDistroStates(distros.map { it.id })
     }
@@ -220,6 +234,12 @@ fun WinlandDashboardScreen(
                 ProfessionalTopBar(activeOperationText = activeOperationText)
             }
         },
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.padding(bottom = 84.dp)
+            )
+        },
         contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Top),
     ) { innerPadding ->
         BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
@@ -228,6 +248,7 @@ fun WinlandDashboardScreen(
             Box(modifier = Modifier.fillMaxSize()) {
                 if (selectedTab == DashboardTab.Terminal) {
                     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+                    val termDark = if (themeSettings.followSystemTheme) isSystemInDarkTheme() else themeSettings.darkModeEnabled
 
                     LaunchedEffect(Unit) {
                         embeddedTerminal.onBarStateChanged = { sessionId, c, a ->
@@ -241,7 +262,7 @@ fun WinlandDashboardScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color(0xFF282C34))
+                            .background(if (termDark) Color(0xFF282C34) else Color(0xFFFAFAFC))
                             .imePadding()
                             .padding(bottom = if (imeVisible) 0.dp else 84.dp)
                     ) {
@@ -258,20 +279,12 @@ fun WinlandDashboardScreen(
                             var textValue by remember(tab.id) { mutableStateOf(tab.label.value) }
                             AlertDialog(
                                 onDismissRequest = { showRenameDialog = null },
-                                title = { Text("Rename Session", color = Color.White) },
-                                containerColor = Color(0xFF1A1D23),
+                                title = { Text("Rename Session") },
                                 text = {
                                     OutlinedTextField(
                                         value = textValue,
                                         onValueChange = { textValue = it },
-                                        singleLine = true,
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedTextColor = Color.White,
-                                            unfocusedTextColor = Color.White,
-                                            cursorColor = Color.White,
-                                            focusedBorderColor = Color(0xFF61AFEF),
-                                            unfocusedBorderColor = Color(0xFF3E4451)
-                                        )
+                                        singleLine = true
                                     )
                                 },
                                 confirmButton = {
@@ -279,12 +292,12 @@ fun WinlandDashboardScreen(
                                         renameSession(tab.id, textValue)
                                         showRenameDialog = null
                                     }) {
-                                        Text("Rename", color = Color(0xFF61AFEF))
+                                        Text("Rename")
                                     }
                                 },
                                 dismissButton = {
                                     TextButton(onClick = { showRenameDialog = null }) {
-                                        Text("Cancel", color = Color.Gray)
+                                        Text("Cancel")
                                     }
                                 }
                             )
@@ -302,11 +315,13 @@ fun WinlandDashboardScreen(
                         Box(modifier = Modifier.weight(1f)) {
                             AndroidView(
                                 factory = { _ ->
+                                    embeddedTerminal.forceDarkTheme = termDark
                                     val view = embeddedTerminal.createView()
                                     embeddedTerminal.startSession(activeSessionId, activeSession.distroId)
                                     view
                                 },
                                 update = { view ->
+                                    embeddedTerminal.refreshTheme(termDark)
                                     embeddedTerminal.attachSession(view, activeSessionId, activeSession.distroId)
                                 },
                                 modifier = Modifier.fillMaxSize()
@@ -489,17 +504,11 @@ private fun LogPanel(
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
             ) {
                 if (displayedLogs.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize().padding(10.dp),
-                        contentAlignment = Alignment.TopStart
-                    ) {
-                        Text(
-                            text = "No logs yet",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp
-                        )
-                    }
+                    EmptyState(
+                        icon = Icons.Default.Terminal,
+                        title = "No logs yet",
+                        body = "Run an operation (Install, Setup, Run) and its output will appear here."
+                    )
                 } else {
                     SelectionContainer {
                         LazyColumn(
@@ -600,11 +609,7 @@ private fun SettingsPanel(
 
         GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Home, contentDescription = "Default Distro", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Default Distro", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                }
+                SectionHeader(icon = Icons.Default.Home, title = "Default Distro")
                 HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 distros.forEach { distro ->
                     val isInstalled = distro.id in installedDistros
@@ -648,11 +653,7 @@ private fun SettingsPanel(
 
         GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Security, contentDescription = "Execution Mode", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Execution Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                }
+                SectionHeader(icon = Icons.Default.Security, title = "Execution Mode")
                 HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
                 val currentMode by viewModel.executionMode.collectAsState()
@@ -690,8 +691,8 @@ private fun SettingsPanel(
                                 )
                                 Text(
                                     text = when (mode) {
-                                        ExecutionMode.ROOT -> "Requires root access. Full system capabilities."
-                                        ExecutionMode.PROOT -> "No root required. Uses bundled proot binary."
+                                        ExecutionMode.ROOT -> "Needs a rooted device. Real mounts, full system capabilities."
+                                        ExecutionMode.PROOT -> "Works without root. User-space isolation via the bundled proot binary."
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -738,11 +739,7 @@ private fun SettingsPanel(
 
         GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.DisplaySettings, contentDescription = "Display resolution", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Display", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                }
+                SectionHeader(icon = Icons.Default.DisplaySettings, title = "Display")
 
                 Spacer(Modifier.height(4.dp))
 
@@ -781,11 +778,7 @@ private fun SettingsPanel(
 
         GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.DisplaySettings, contentDescription = "Display info", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Display Info", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                }
+                SectionHeader(icon = Icons.Default.DisplaySettings, title = "Display Info")
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
@@ -831,11 +824,7 @@ private fun SettingsPanel(
 
         GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.DarkMode, contentDescription = "Appearance", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Appearance", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                }
+                SectionHeader(icon = Icons.Default.DarkMode, title = "Appearance")
 
                 Text(
                     text = "Theme",
@@ -887,11 +876,7 @@ private fun SettingsPanel(
 
         GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.PowerSettingsNew, contentDescription = "Runtime controls", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Runtime Controls", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                }
+                SectionHeader(icon = Icons.Default.PowerSettingsNew, title = "Runtime Controls")
                 val runtimeReady = activeDistroId != null
                 val buttonsEnabled = controlsEnabled && runtimeReady
 
@@ -932,12 +917,7 @@ private fun SettingsPanel(
         }
         GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.TouchApp, contentDescription = "Input mode",
-                    tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Input Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                }
+                SectionHeader(icon = Icons.Default.TouchApp, title = "Input Mode")
 
                 Spacer(Modifier.height(4.dp))
 
@@ -985,11 +965,7 @@ private fun SettingsPanel(
 
         GlassCard {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Info, contentDescription = "Help", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Help", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                }
+                SectionHeader(icon = Icons.Default.Info, title = "Help")
                 HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
                 val features = listOf(
@@ -1147,7 +1123,19 @@ private fun DistroCard(
                     Text(distro.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    StatusBadge(statusReady)
+                    val tone = when {
+                        isDownloading || isSettingUp || isRunLaunching -> BadgeTone.Info
+                        statusReady -> BadgeTone.Success
+                        else -> BadgeTone.Neutral
+                    }
+                    val label = when {
+                        isDownloading -> "DOWNLOADING"
+                        isSettingUp -> "SETTING UP"
+                        isRunLaunching -> "LAUNCHING"
+                        statusReady -> "READY"
+                        else -> "PENDING"
+                    }
+                    StatusBadge(text = label, tone = tone)
                     Spacer(Modifier.height(4.dp))
                     ExecutionModeBadge(mode = executionMode)
                 }
@@ -1157,7 +1145,7 @@ private fun DistroCard(
             Text(
                 "Status: $statusText",
                 style = MaterialTheme.typography.labelMedium,
-                color = if (statusReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 "Phase: $stageText  |  Last update: $lastStageUpdate",
@@ -1186,11 +1174,26 @@ private fun DistroCard(
                 )
             }
 
+            if (isDownloading) {
+                Text(
+                    text = formatDownloadDetail(
+                        fraction = progress,
+                        bytesRead = currentUiState.downloadedBytes,
+                        totalBytes = currentUiState.totalBytes,
+                        bytesPerSec = currentUiState.speedBps
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = FontFamily.Monospace
+                )
+                Spacer(Modifier.height(4.dp))
+            }
+
             if (operationLocked) {
                 Text(
                     text = "Controls locked: ${lockReason ?: "Operation running"}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary
+                    color = MaterialTheme.colorScheme.secondary
                 )
             }
 
@@ -1295,31 +1298,35 @@ private fun ExecutionModeBadge(mode: ExecutionMode) {
     }
 }
 
-@Composable
-private fun StatusBadge(ready: Boolean) {
-    Surface(
-        color = if (ready) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(50)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = if (ready) "READY" else "PENDING",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (ready) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Bold
-            )
-        }
+/* Shared StatusBadge(text, tone) from WinlandComponents.kt is used instead. */
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes < 0 -> "?"
+    bytes < 1024L -> "$bytes B"
+    bytes < 1024L * 1024L -> "%.1f KB".format(bytes / 1024f)
+    bytes < 1024L * 1024L * 1024L -> "%.1f MB".format(bytes / 1048576f)
+    else -> "%.2f GB".format(bytes / 1073741824f)
+}
+
+private fun formatEta(remainingBytes: Long, bytesPerSec: Long): String {
+    if (bytesPerSec <= 0L || remainingBytes <= 0L) return "--:--"
+    val totalSec = remainingBytes / bytesPerSec
+    return "%02d:%02d".format(totalSec / 60, totalSec % 60)
+}
+
+/** "42% • 12.6/30.0 MB • 1.2 MB/s • ETA 00:14" (parts omitted when unknown). */
+private fun formatDownloadDetail(fraction: Float, bytesRead: Long, totalBytes: Long, bytesPerSec: Long): String {
+    val parts = mutableListOf<String>()
+    if (fraction >= 0f) parts.add("${(fraction * 100).toInt()}%")
+    if (totalBytes > 0) {
+        parts.add("${formatBytes(bytesRead)}/${formatBytes(totalBytes)}")
+        parts.add(formatEta(totalBytes - bytesRead, bytesPerSec))
+            .let { eta -> "ETA $eta" }
+    } else if (bytesRead > 0) {
+        parts.add(formatBytes(bytesRead))
     }
+    if (bytesPerSec > 0) parts.add("${formatBytes(bytesPerSec)}/s")
+    return parts.joinToString(" • ").ifEmpty { "Downloading..." }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1430,7 +1437,7 @@ private fun SessionSwitcherBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF1A1D23))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -1442,19 +1449,18 @@ private fun SessionSwitcherBar(
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(activeLabel, color = Color.White, fontWeight = FontWeight.SemiBold)
+                Text(activeLabel, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.width(4.dp))
                 Icon(
                     Icons.Default.KeyboardArrowDown,
                     contentDescription = "Switch session",
-                    tint = Color.White
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
 
             DropdownMenu(
                 expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.background(Color(0xFF1A1D23))
+                onDismissRequest = { expanded = false }
             ) {
                 sessionTabs.forEach { tab ->
                     val isActive = tab.id == activeSessionId
@@ -1467,13 +1473,13 @@ private fun SessionSwitcherBar(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     if (isActive) "\u25CF" else "\u25CB",
-                                    color = if (isActive) Color(0xFF61AFEF) else Color.Gray,
+                                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 12.sp
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
                                     tab.label.value,
-                                    color = Color.White,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     fontSize = 13.sp
                                 )
                             }
@@ -1487,7 +1493,7 @@ private fun SessionSwitcherBar(
                                     Icon(
                                         Icons.Default.Close,
                                         contentDescription = "Close session",
-                                        tint = Color.Gray.copy(alpha = 0.7f),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -1495,11 +1501,11 @@ private fun SessionSwitcherBar(
                         }
                     )
                 }
-                HorizontalDivider(color = Color(0xFF3E4451))
+                HorizontalDivider()
                 DropdownMenuItem(
                     onClick = { onAddTab(); expanded = false },
                     text = {
-                        Text("\uFF0B New Session", color = Color(0xFF61AFEF))
+                        Text("\uFF0B New Session", color = MaterialTheme.colorScheme.primary)
                     }
                 )
             }
@@ -1510,7 +1516,7 @@ private fun SessionSwitcherBar(
             Icon(
                 Icons.Default.Edit,
                 contentDescription = "Rename session",
-                tint = Color.White
+                tint = MaterialTheme.colorScheme.onSurface
             )
         }
     }
@@ -1529,7 +1535,7 @@ private fun TerminalExtraKeysBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF1A1D23))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .horizontalScroll(scrollState)
             .padding(horizontal = 6.dp, vertical = 5.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -1568,7 +1574,7 @@ private fun ExtraKeyButton(
             onClick?.invoke() ?: onKey(label)
         },
         shape = RoundedCornerShape(8.dp),
-        color = Color(0xFF3E4451),
+        color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.height(40.dp)
     ) {
         Box(
@@ -1577,7 +1583,7 @@ private fun ExtraKeyButton(
         ) {
             Text(
                 text = label,
-                color = Color(0xFFABB2BF),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.SemiBold
@@ -1594,10 +1600,10 @@ private fun ExtraKeyToggle(
 ) {
     val haptics = LocalHapticFeedback.current
     val bgColor by animateColorAsState(
-        targetValue = if (active) Color(0xFF61AFEF) else Color(0xFF3E4451),
+        targetValue = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
         label = "toggleBg"
     )
-    val textColor = if (active) Color(0xFF282C34) else Color(0xFFABB2BF)
+    val textColor = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         onClick = {
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)

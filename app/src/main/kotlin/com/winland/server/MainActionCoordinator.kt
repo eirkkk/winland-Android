@@ -43,7 +43,7 @@ class MainActionCoordinator(
                 downloadAndExtractRootfsUseCase(
                     context = appContext,
                     distro = distro,
-                    onProgress = { progress -> viewModel.setDistroProgress(distro.id, progress) }
+                    onProgress = { p -> viewModel.setDistroProgressDetail(distro.id, p.fraction, p.bytesRead, p.totalBytes, p.bytesPerSec) }
                 )
             } finally {
                 viewModel.setDistroDownloading(distro.id, false)

@@ -23,7 +23,7 @@ class DownloadAndExtractRootfsUseCase(
     suspend operator fun invoke(
         context: Context,
         distro: LinuxDistro,
-        onProgress: (Float) -> Unit
+        onProgress: (DownloadManager.DownloadProgress) -> Unit
     ): Result {
         val extension = if (distro.url.endsWith(".tar.gz")) ".tar.gz" else ".tar.xz"
         val targetFile = File(context.getUnifiedFilesDir(), "downloads/rootfs-${distro.id}$extension")

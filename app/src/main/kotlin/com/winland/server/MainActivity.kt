@@ -10,7 +10,6 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -76,14 +75,8 @@ class MainActivity : ComponentActivity() {
     private fun showToastSafe(message: String, longDuration: Boolean = false) {
         if (isFinishing || isDestroyed) return
         if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return
-        runOnUiThread {
-            if (isFinishing || isDestroyed) return@runOnUiThread
-            Toast.makeText(
-                this,
-                message,
-                if (longDuration) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
-            ).show()
-        }
+        // Shown as Snackbar in the dashboard (buffered until composed).
+        uiViewModel.showMessage(message, longDuration)
     }
 
     private val permissionLauncher = registerForActivityResult(

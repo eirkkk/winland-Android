@@ -42,10 +42,18 @@ object DownloadManager {
         }
     }
 
+    /** Rich download progress: fraction 0..1 (-1 when total unknown). */
+    data class DownloadProgress(
+        val fraction: Float,
+        val bytesRead: Long,
+        val totalBytes: Long,
+        val bytesPerSec: Long
+    )
+
     suspend fun downloadRootfs(
         urlString: String,
         targetFile: File,
-        onProgress: (Float) -> Unit
+        onProgress: (DownloadProgress) -> Unit
     ): Boolean = withContext(Dispatchers.IO) {
         if (!isDownloading.compareAndSet(false, true)) {
             Log.w(TAG, "Download already in progress; skipping duplicate request")
@@ -89,6 +97,20 @@ object DownloadManager {
             val buffer = ByteArray(8192)
             var bytesRead: Int
             var totalBytesRead: Long = 0
+            val startNs = System.nanoTime()
+            var lastEmitNs = 0L
+
+            fun emit(force: Boolean = false) {
+                val now = System.nanoTime()
+                if (!force && now - lastEmitNs < 250_000_000L) return
+                lastEmitNs = now
+                val elapsedSec = ((now - startNs).coerceAtLeast(1L)) / 1_000_000_000.0
+                val bps = (totalBytesRead / elapsedSec).toLong()
+                val fraction = if (contentLength > 0) {
+                    (totalBytesRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
+                } else -1f
+                onProgress(DownloadProgress(fraction, totalBytesRead, contentLength, bps))
+            }
 
             Log.d(TAG, "Writing to file: ${targetFile.absolutePath}")
 
@@ -98,10 +120,9 @@ object DownloadManager {
 
                     outputStream.write(buffer, 0, bytesRead)
                     totalBytesRead += bytesRead
-                    if (contentLength > 0) {
-                        onProgress(totalBytesRead.toFloat() / contentLength.toFloat())
-                    }
+                    emit()
                 }
+                emit(force = true)
 
                 outputStream.flush()
                 outputStream.close()

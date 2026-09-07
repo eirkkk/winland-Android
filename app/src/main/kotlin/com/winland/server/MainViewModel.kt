@@ -16,6 +16,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -50,7 +53,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val isDownloading: Boolean = false,
         val isRunLaunching: Boolean = false,
         val stageText: String = "Idle",
-        val lastStageUpdate: String = "--:--:--"
+        val lastStageUpdate: String = "--:--:--",
+        val downloadedBytes: Long = 0L,
+        val totalBytes: Long = -1L,
+        val speedBps: Long = 0L
     )
 
     data class ChrootRuntimeState(
@@ -254,6 +260,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setDistroProgress(id: String, progress: Float) {
         updateDistroState(id) { it.copy(progress = progress) }
+    }
+
+    fun setDistroProgressDetail(id: String, fraction: Float, bytesRead: Long, totalBytes: Long, bytesPerSec: Long) {
+        updateDistroState(id) {
+            it.copy(
+                progress = if (fraction >= 0f) fraction else it.progress,
+                downloadedBytes = bytesRead,
+                totalBytes = totalBytes,
+                speedBps = bytesPerSec
+            )
+        }
+    }
+
+    /** UI messages (message, isError) shown as Snackbar in the dashboard. */
+    private val _messages = MutableSharedFlow<Pair<String, Boolean>>(extraBufferCapacity = 8)
+    val messages: SharedFlow<Pair<String, Boolean>> = _messages.asSharedFlow()
+
+    fun showMessage(message: String, isError: Boolean = false) {
+        _messages.tryEmit(message to isError)
     }
 
     fun setDistroDownloading(id: String, downloading: Boolean) {
