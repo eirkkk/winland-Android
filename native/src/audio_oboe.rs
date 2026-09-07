@@ -87,70 +87,80 @@ fn create_playback_stream() -> oboe::Result<AudioStreamSync<oboe::Output, (i16, 
 }
 
 fn playback_thread() {
-    log::info!("Oboe playback thread: started");
+    log::info!("Oboe playback thread: started (persistent, waits for PLAYING flag)");
 
-    let mut stream = match create_playback_stream() {
-        Ok(s) => s,
-        Err(e) => {
-            log::error!("Oboe playback: failed to create stream: {}", e);
-            PLAYING.store(false, Ordering::SeqCst);
-            return;
+    loop {
+        // Park here until playback is requested. The old structure exited
+        // when PLAYING was false at spawn time (e.g. startRecording() ran
+        // first), and THREADS_SPAWNED then blocked any respawn -> permanent
+        // silence. This loop makes the thread immortal like recording_thread.
+        while !PLAYING.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(500));
         }
-    };
-    if let Err(e) = stream.start() {
-        log::error!("Oboe playback: failed to start stream: {}", e);
-        PLAYING.store(false, Ordering::SeqCst);
-        return;
-    }
 
-    let burst = stream.get_frames_per_burst() as usize;
-    let channels = stream.get_channel_count() as usize;
-    let buf_size = burst * channels;
-    let mut byte_buf = vec![0u8; buf_size * 2];
+        let mut stream = match create_playback_stream() {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("Oboe playback: failed to create stream: {} (retrying)", e);
+                thread::sleep(Duration::from_secs(2));
+                continue;
+            }
+        };
+        if let Err(e) = stream.start() {
+            log::error!("Oboe playback: failed to start stream: {} (retrying)", e);
+            thread::sleep(Duration::from_secs(2));
+            continue;
+        }
 
-    while PLAYING.load(Ordering::Relaxed) {
-        match File::open(PLAYBACK_FIFO) {
-            Ok(mut fifo) => {
-                log::info!("Oboe playback: connected to FIFO");
-                while PLAYING.load(Ordering::Relaxed) {
-                    match fifo.read(&mut byte_buf) {
-                        Ok(0) => {
-                            log::info!("Oboe playback: FIFO EOF, reconnecting...");
-                            break;
-                        }
-                        Ok(n) => {
-                            let frame_count = n / 4;
-                            if frame_count > 0 {
-                                let stereo_data = unsafe {
-                                    std::slice::from_raw_parts(
-                                        byte_buf.as_ptr() as *const (i16, i16),
-                                        frame_count,
-                                    )
-                                };
-                                let timeout_ns =
-                                    std::time::Duration::from_millis(500).as_nanos() as i64;
-                                if let Err(e) = stream.write(stereo_data, timeout_ns) {
-                                    log::error!("Oboe playback: write error: {}", e);
-                                    break;
+        let burst = stream.get_frames_per_burst() as usize;
+        let channels = stream.get_channel_count() as usize;
+        let buf_size = burst * channels;
+        let mut byte_buf = vec![0u8; buf_size * 2];
+
+        while PLAYING.load(Ordering::Relaxed) {
+            match File::open(PLAYBACK_FIFO) {
+                Ok(mut fifo) => {
+                    log::info!("Oboe playback: connected to FIFO");
+                    while PLAYING.load(Ordering::Relaxed) {
+                        match fifo.read(&mut byte_buf) {
+                            Ok(0) => {
+                                log::info!("Oboe playback: FIFO EOF, reconnecting...");
+                                break;
+                            }
+                            Ok(n) => {
+                                let frame_count = n / 4;
+                                if frame_count > 0 {
+                                    let stereo_data = unsafe {
+                                        std::slice::from_raw_parts(
+                                            byte_buf.as_ptr() as *const (i16, i16),
+                                            frame_count,
+                                        )
+                                    };
+                                    let timeout_ns =
+                                        std::time::Duration::from_millis(500).as_nanos() as i64;
+                                    if let Err(e) = stream.write(stereo_data, timeout_ns) {
+                                        log::error!("Oboe playback: write error: {}", e);
+                                        break;
+                                    }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            log::error!("Oboe playback: FIFO read error: {}", e);
-                            break;
+                            Err(e) => {
+                                log::error!("Oboe playback: FIFO read error: {}", e);
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            Err(e) => {
-                log::debug!("Oboe playback: waiting for FIFO: {}", e);
-                thread::sleep(std::time::Duration::from_millis(500));
+                Err(e) => {
+                    log::debug!("Oboe playback: waiting for FIFO: {}", e);
+                    thread::sleep(std::time::Duration::from_millis(500));
+                }
             }
         }
-    }
 
-    let _ = stream.stop();
-    log::info!("Oboe playback thread: stopped");
+        let _ = stream.stop();
+        log::info!("Oboe playback: session ended, back to wait");
+    }
 }
 
 fn create_recording_stream() -> oboe::Result<AudioStreamSync<oboe::Input, (i16, oboe::Mono)>> {
